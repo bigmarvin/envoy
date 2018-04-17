@@ -21,18 +21,17 @@ envoy_cc_test(
         "//test/mocks/runtime:runtime_mocks",
         "//test/mocks/server:server_mocks",
         "//test/test_common:environment_lib",
+        "//test/test_common:logging_lib",
         "//test/test_common:network_utility_lib",
         "//test/test_common:utility_lib",
     ],
 )
 
 envoy_cc_test(
-    name = "health_check_test",
-    srcs = ["health_check_test.cc"],
+    name = "config_tracker_impl_test",
+    srcs = ["config_tracker_impl_test.cc"],
     deps = [
-        "//source/common/buffer:buffer_lib",
-        "//source/server/http:health_check_lib",
-        "//test/mocks/server:server_mocks",
-        "//test/test_common:utility_lib",
+        "//source/server/http:config_tracker_lib",
+        "//test/mocks:common_lib",
     ],
 )

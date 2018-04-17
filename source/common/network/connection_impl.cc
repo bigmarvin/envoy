@@ -181,7 +181,6 @@ void ConnectionImpl::noDelay(bool enable) {
 #endif
 
   RELEASE_ASSERT(0 == rc);
-  UNREFERENCED_PARAMETER(rc);
 }
 
 uint64_t ConnectionImpl::id() const { return id_; }
@@ -324,9 +323,9 @@ void ConnectionImpl::write(Buffer::Instance& data, bool end_stream) {
     // TODO(mattklein123): All data currently gets moved from the source buffer to the write buffer.
     // This can lead to inefficient behavior if writing a bunch of small chunks. In this case, it
     // would likely be more efficient to copy data below a certain size. VERY IMPORTANT: If this is
-    // ever changed, read the comment in Ssl::ConnectionImpl::doWriteToSocket() VERY carefully.
-    // That code assumes that we never change existing write_buffer_ chain elements between calls
-    // to SSL_write(). That code will have to change if we ever copy here.
+    // ever changed, read the comment in SslSocket::doWrite() VERY carefully. That code assumes that
+    // we never change existing write_buffer_ chain elements between calls to SSL_write(). That code
+    // might need to change if we ever copy here.
     write_buffer_->move(data);
 
     // Activating a write event before the socket is connected has the side-effect of tricking
@@ -458,7 +457,6 @@ void ConnectionImpl::onWriteReady() {
     socklen_t error_size = sizeof(error);
     int rc = getsockopt(fd(), SOL_SOCKET, SO_ERROR, &error, &error_size);
     ASSERT(0 == rc);
-    UNREFERENCED_PARAMETER(rc);
 
     if (error == 0) {
       ENVOY_CONN_LOG(debug, "connected", *this);
@@ -539,13 +537,15 @@ ClientConnectionImpl::ClientConnectionImpl(
     : ConnectionImpl(dispatcher, std::make_unique<ClientSocketImpl>(remote_address),
                      std::move(transport_socket), false) {
   if (options) {
-    if (!options->setOptions(*socket_)) {
-      // Set a special error state to ensure asynchronous close to give the owner of the
-      // ConnectionImpl a chance to add callbacks and detect the "disconnect".
-      immediate_error_event_ = ConnectionEvent::LocalClose;
-      // Trigger a write event to close this connection out-of-band.
-      file_event_->activate(Event::FileReadyType::Write);
-      return;
+    for (const auto& option : *options) {
+      if (!option->setOption(*socket_, Socket::SocketState::PreBind)) {
+        // Set a special error state to ensure asynchronous close to give the owner of the
+        // ConnectionImpl a chance to add callbacks and detect the "disconnect".
+        immediate_error_event_ = ConnectionEvent::LocalClose;
+        // Trigger a write event to close this connection out-of-band.
+        file_event_->activate(Event::FileReadyType::Write);
+        return;
+      }
     }
   }
   if (source_address != nullptr) {

@@ -28,7 +28,12 @@ enum class Mode {
    */
   Validate,
 
-  // TODO(rlazarus): Add a third option for "light validation": Mock out access to the filesystem.
+  /**
+   * Completely load and initialize the config, and then exit without running the listener loop.
+   */
+  InitOnly,
+
+  // TODO(rlazarus): Add a fourth option for "light validation": Mock out access to the filesystem.
   // Perform no validation of files referenced in the config, such as runtime configs, SSL certs,
   // etc. Validation will pass even if those files are malformed or don't exist, allowing the config
   // to be validated in a non-prod environment.
@@ -65,6 +70,12 @@ public:
   virtual const std::string& configPath() PURE;
 
   /**
+   * @return const std::string& an inline YAML bootstrap config that merges
+   *                            into the config loaded in configPath().
+   */
+  virtual const std::string& configYaml() PURE;
+
+  /**
    * @return bool whether the config should only be parsed as v2. If false, when a v2 parse fails,
    *              a second attempt to parse the config as v1 will be made.
    */
@@ -84,6 +95,11 @@ public:
    * @return spdlog::level::level_enum the default log level for the server.
    */
   virtual spdlog::level::level_enum logLevel() PURE;
+
+  /**
+   * @return const std::string& the log format string.
+   */
+  virtual const std::string& logFormat() PURE;
 
   /**
    * @return const std::string& the log file path.

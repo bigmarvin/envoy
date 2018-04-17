@@ -30,16 +30,24 @@ public:
   /**
    * @return std::string representing the GMT/UTC time based on the input time.
    */
-  std::string fromTime(const SystemTime& time);
+  std::string fromTime(const SystemTime& time) const;
+
+  /**
+   * @return std::string representing the GMT/UTC time based on the input time.
+   */
+  std::string fromTime(time_t time) const;
 
   /**
    * @return std::string representing the current GMT/UTC time based on the format string.
    */
   std::string now();
 
-private:
-  std::string fromTimeT(time_t time);
+  /**
+   * @return std::string the format string used.
+   */
+  const std::string& formatString() const { return format_string_; }
 
+private:
   std::string format_string_;
 };
 
@@ -118,9 +126,15 @@ public:
 
   /**
    * Convert a string to an unsigned long, checking for error.
-   * @param return TRUE if successful, FALSE otherwise.
+   * @param return true if successful, false otherwise.
    */
   static bool atoul(const char* str, uint64_t& out, int base = 10);
+
+  /**
+   * Convert a string to a long, checking for error.
+   * @param return true if successful, false otherwise.
+   */
+  static bool atol(const char* str, int64_t& out, int base = 10);
 
   /**
    * Perform a case insensitive compare of 2 strings.
@@ -266,8 +280,9 @@ public:
   /**
    * Version of substr() that operates on a start and end index instead of a start index and a
    * length.
+   * @return string substring starting at start, and ending right before end.
    */
-  static std::string subspan(const std::string& source, size_t start, size_t end);
+  static std::string subspan(absl::string_view source, size_t start, size_t end);
 
   /**
    * Escape strings for logging purposes. Returns a copy of the string with
@@ -430,6 +445,41 @@ private:
  */
 struct StringViewHash {
   std::size_t operator()(const absl::string_view& k) const { return HashUtil::xxHash64(k); }
+};
+
+/**
+ * Computes running standard-deviation using Welford's algorithm:
+ * https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
+ */
+class WelfordStandardDeviation {
+public:
+  /**
+   * Accumulates a new value into the standard deviation.
+   * @param newValue the new value
+   */
+  void update(double newValue);
+
+  /**
+   * @return double the computed mean value.
+   */
+  double mean() const { return mean_; }
+
+  /**
+   * @return uint64_t the number of times update() was called
+   */
+  uint64_t count() const { return count_; }
+
+  /**
+   * @return double the standard deviation.
+   */
+  double computeStandardDeviation() const;
+
+private:
+  double computeVariance() const;
+
+  uint64_t count_{0};
+  double mean_{0};
+  double m2_{0};
 };
 
 } // namespace Envoy

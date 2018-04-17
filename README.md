@@ -5,7 +5,6 @@
 Envoy is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF). If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF. For details about who's involved and how Envoy plays a role, read the CNCF [announcement](https://www.cncf.io/blog/2017/09/13/cncf-hosts-envoy/).
 
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/1266/badge)](https://bestpractices.coreinfrastructure.org/projects/1266)
-[![Coverity](https://scan.coverity.com/projects/10180/badge.svg)](https://scan.coverity.com/projects/envoy-proxy)
 
 ## Documentation
 
@@ -23,7 +22,8 @@ to find out more about the origin story and design philosophy of Envoy
 
 ## Related
 
-* [data-plane-api](https://github.com/envoyproxy/data-plane-api): v2 API definitions.
+* [data-plane-api](https://github.com/envoyproxy/data-plane-api): v2 API definitions as a standalone
+  repository. This is a read-only mirror of [api](api/).
 * [envoy-perf](https://github.com/envoyproxy/envoy-perf): Performance testing framework.
 * [envoy-filter-example](https://github.com/envoyproxy/envoy-filter-example): Example of how to add new filters
   and link to the main repository.
@@ -65,10 +65,16 @@ The Envoy team meets every other Tuesday at 9am PT. The public Google calendar i
 
 Meeting minutes are here: https://goo.gl/5Cergb
 
-## Reporting security vulnerabilities
+## Security
+
+### Security Audit
+
+A third party security audit was performed by Cure53, you can see the full report [here](docs/SECURITY_AUDIT.pdf).
+
+### Reporting security vulnerabilities
 
 If you've found a vulnerability or a potential vulnerability in Envoy please let us know at
-[envoy-security](https://groups.google.com/forum/#!forum/envoy-security). We'll send a confirmation
+[envoy-security](mailto:envoy-security@googlegroups.com). We'll send a confirmation
 email to acknowledge your report, and we'll send an additional email when we've identified the issue
 positively or negatively.
 

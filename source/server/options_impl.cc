@@ -40,6 +40,12 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
       fmt::format("\nDefault is [{}]", spdlog::level::level_names[default_log_level]);
   log_levels_string += "\n[trace] and [debug] are only available on debug builds";
 
+  const std::string log_format_string =
+      fmt::format("Log message format in spdlog syntax "
+                  "(see https://github.com/gabime/spdlog/wiki/3.-Custom-formatting)"
+                  "\nDefault is \"{}\"",
+                  Logger::Logger::DEFAULT_LOG_FORMAT);
+
   TCLAP::CmdLine cmd("envoy", ' ', VersionInfo::version());
   TCLAP::ValueArg<uint32_t> base_id(
       "", "base-id", "base ID so that multiple envoys can run on the same host if needed", false, 0,
@@ -48,6 +54,9 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
                                         std::thread::hardware_concurrency(), "uint32_t", cmd);
   TCLAP::ValueArg<std::string> config_path("c", "config-path", "Path to configuration file", false,
                                            "", "string", cmd);
+  TCLAP::ValueArg<std::string> config_yaml(
+      "", "config-yaml", "Inline YAML configuration, merges with the contents of --config-path",
+      false, "", "string", cmd);
   TCLAP::SwitchArg v2_config_only("", "v2-config-only", "parse config as v2 only", cmd, false);
   TCLAP::ValueArg<std::string> admin_address_path("", "admin-address-path", "Admin address path",
                                                   false, "", "string", cmd);
@@ -58,6 +67,8 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
   TCLAP::ValueArg<std::string> log_level("l", "log-level", log_levels_string, false,
                                          spdlog::level::level_names[default_log_level], "string",
                                          cmd);
+  TCLAP::ValueArg<std::string> log_format("", "log-format", log_format_string, false,
+                                          Logger::Logger::DEFAULT_LOG_FORMAT, "string", cmd);
   TCLAP::ValueArg<std::string> log_path("", "log-path", "Path to logfile", false, "", "string",
                                         cmd);
   TCLAP::ValueArg<uint32_t> restart_epoch("", "restart-epoch", "hot restart epoch #", false, 0,
@@ -120,10 +131,12 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
     throw MalformedArgvException(message);
   }
 
+  hot_restart_disabled_ = disable_hot_restart.getValue();
   if (hot_restart_version_option.getValue()) {
     std::cerr << hot_restart_version_cb(max_stats.getValue(),
                                         max_obj_name_len.getValue() +
-                                            Stats::RawStatData::maxStatSuffixLength());
+                                            Stats::RawStatData::maxStatSuffixLength(),
+                                        !hot_restart_disabled_);
     throw NoServingException();
   }
 
@@ -134,10 +147,14 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
     }
   }
 
+  log_format_ = log_format.getValue();
+
   if (mode.getValue() == "serve") {
     mode_ = Server::Mode::Serve;
   } else if (mode.getValue() == "validate") {
     mode_ = Server::Mode::Validate;
+  } else if (mode.getValue() == "init_only") {
+    mode_ = Server::Mode::InitOnly;
   } else {
     const std::string message = fmt::format("error: unknown mode '{}'", mode.getValue());
     std::cerr << message << std::endl;
@@ -159,6 +176,7 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
   base_id_ = base_id.getValue() * 10;
   concurrency_ = concurrency.getValue();
   config_path_ = config_path.getValue();
+  config_yaml_ = config_yaml.getValue();
   v2_config_only_ = v2_config_only.getValue();
   admin_address_path_ = admin_address_path.getValue();
   log_path_ = log_path.getValue();
@@ -171,6 +189,5 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
   parent_shutdown_time_ = std::chrono::seconds(parent_shutdown_time_s.getValue());
   max_stats_ = max_stats.getValue();
   max_obj_name_length_ = max_obj_name_len.getValue();
-  hot_restart_disabled_ = disable_hot_restart.getValue();
 }
 } // namespace Envoy

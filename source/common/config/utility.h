@@ -1,10 +1,6 @@
 #pragma once
 
-#include "envoy/api/v2/cds.pb.h"
 #include "envoy/api/v2/core/base.pb.h"
-#include "envoy/api/v2/eds.pb.h"
-#include "envoy/api/v2/lds.pb.h"
-#include "envoy/api/v2/route/route.pb.h"
 #include "envoy/config/bootstrap/v2/bootstrap.pb.h"
 #include "envoy/config/filter/network/http_connection_manager/v2/http_connection_manager.pb.h"
 #include "envoy/config/grpc_mux.h"
@@ -126,9 +122,28 @@ public:
   static void checkFilesystemSubscriptionBackingPath(const std::string& path);
 
   /**
+   * Check the grpc_services and cluster_names for API config sanity. Throws on error.
+   * @param api_config_source the config source to validate.
+   * @throws EnvoyException when an API config has the wrong number of gRPC
+   * services or cluster names, depending on expectations set by its API type.
+   */
+  static void
+  checkApiConfigSourceNames(const envoy::api::v2::core::ApiConfigSource& api_config_source);
+
+  /**
    * Check the validity of a cluster backing an api config source. Throws on error.
    * @param clusters the clusters currently loaded in the cluster manager.
    * @param api_config_source the config source to validate.
+   * @throws EnvoyException when an API config doesn't have a statically defined non-EDS cluster.
+   */
+  static void validateClusterName(const Upstream::ClusterManager::ClusterInfoMap& clusters,
+                                  const std::string& cluster_name);
+
+  /**
+   * Potentially calls Utility::validateClusterName, if a cluster name can be found.
+   * @param clusters the clusters currently loaded in the cluster manager.
+   * @param api_config_source the config source to validate.
+   * @throws EnvoyException when an API config doesn't have a statically defined non-EDS cluster.
    */
   static void checkApiConfigSourceSubscriptionBackingCluster(
       const Upstream::ClusterManager::ClusterInfoMap& clusters,
@@ -211,10 +226,8 @@ public:
                                                             Factory& factory) {
     ProtobufTypes::MessagePtr config = factory.createEmptyConfigProto();
 
-    if (config == nullptr) {
-      throw EnvoyException(fmt::format(
-          "{} factory returned nullptr instead of empty config message.", factory.name()));
-    }
+    // Fail in an obvious way if a plugin does not return a proto.
+    RELEASE_ASSERT(config != nullptr);
 
     if (enclosing_message.has_config()) {
       MessageUtil::jsonConvert(enclosing_message.config(), *config);
@@ -224,14 +237,26 @@ public:
   }
 
   /**
-   * Obtain the "name" of a v2 API resource in a google.protobuf.Any, e.g. the route config name for
-   * a Routeconfiguration, based on the underlying resource type.
-   * TODO(htuch): This is kind of a hack. If we had a better support for resource names as first
-   * class in the API, this would not be necessary.
-   * @param resource google.protobuf.Any v2 API resource.
-   * @return std::string resource name.
+   * Translate a nested config into a route-specific proto message provided by
+   * the implementation factory.
+   * @param source a message (typically Struct) that contains the config for
+   *        the given factory's route-local configuration (as returned by
+   *        createEmptyRouteConfigProto).
+   * @param factory implementation factory with the method
+   *        'createEmptyRouteConfigProto' to produce a proto to be filled with
+   *        the translated configuration.
    */
-  static std::string resourceName(const ProtobufWkt::Any& resource);
+  template <class Factory>
+  static ProtobufTypes::MessagePtr translateToFactoryRouteConfig(const Protobuf::Message& source,
+                                                                 Factory& factory) {
+    ProtobufTypes::MessagePtr config = factory.createEmptyRouteConfigProto();
+
+    // Fail in an obvious way if a plugin does not return a proto.
+    RELEASE_ASSERT(config != nullptr);
+
+    MessageUtil::jsonConvert(source, *config);
+    return config;
+  }
 
   /**
    * Create TagProducer instance. Check all tag names for conflicts to avoid
@@ -257,9 +282,9 @@ public:
    * @return Grpc::AsyncClientFactoryPtr gRPC async client factory.
    */
   static Grpc::AsyncClientFactoryPtr
-  factoryForApiConfigSource(Grpc::AsyncClientManager& async_client_manager,
-                            const envoy::api::v2::core::ApiConfigSource& api_config_source,
-                            Stats::Scope& scope);
+  factoryForGrpcApiConfigSource(Grpc::AsyncClientManager& async_client_manager,
+                                const envoy::api::v2::core::ApiConfigSource& api_config_source,
+                                Stats::Scope& scope);
 };
 
 } // namespace Config

@@ -140,7 +140,7 @@ envoy_cc_library(
 
 genrule(
     name = "generate_version_number",
-    srcs = ["@envoy_api//:VERSION"],
+    srcs = ["//:VERSION"],
     outs = ["version_number.h"],
     cmd = """echo "#define BUILD_VERSION_NUMBER \\"$$(cat $<)\\"" >$@""",
 )
@@ -184,5 +184,26 @@ envoy_cc_library(
     deps = [
         ":assert_lib",
         ":logger_lib",
+    ],
+)
+
+envoy_cc_library(
+    name = "perf_annotation_lib",
+    srcs = ["perf_annotation.cc"],
+    hdrs = ["perf_annotation.h"],
+    deps = [
+        ":assert_lib",
+        ":utility_lib",
+    ],
+)
+
+envoy_cc_library(
+    name = "token_bucket_impl_lib",
+    srcs = ["token_bucket_impl.cc"],
+    hdrs = ["token_bucket_impl.h"],
+    deps = [
+        "//include/envoy/common:time_interface",
+        "//include/envoy/common:token_bucket_interface",
+        "//source/common/common:utility_lib",
     ],
 )

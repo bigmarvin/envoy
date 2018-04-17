@@ -24,13 +24,13 @@ envoy_cc_library(
 )
 
 envoy_cc_library(
-    name = "interval_set_interface",
-    hdrs = ["interval_set.h"],
+    name = "token_bucket_interface",
+    hdrs = ["token_bucket.h"],
 )
 
 envoy_cc_library(
-    name = "optional",
-    hdrs = ["optional.h"],
+    name = "interval_set_interface",
+    hdrs = ["interval_set.h"],
 )
 
 envoy_cc_library(

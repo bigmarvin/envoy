@@ -6,8 +6,9 @@
 #include "common/config/json_utility.h"
 #include "common/config/metadata.h"
 #include "common/config/utility.h"
-#include "common/config/well_known_names.h"
 #include "common/json/config_schemas.h"
+
+#include "extensions/filters/http/well_known_names.h"
 
 namespace Envoy {
 namespace Config {
@@ -92,8 +93,17 @@ void RdsJson::translateHeaderMatcher(const Json::Object& json_header_matcher,
                                      envoy::api::v2::route::HeaderMatcher& header_matcher) {
   json_header_matcher.validateSchema(Json::Schema::HEADER_DATA_CONFIGURATION_SCHEMA);
   JSON_UTIL_SET_STRING(json_header_matcher, header_matcher, name);
-  JSON_UTIL_SET_STRING(json_header_matcher, header_matcher, value);
-  JSON_UTIL_SET_BOOL(json_header_matcher, header_matcher, regex);
+
+  if (json_header_matcher.getBoolean("regex", false)) {
+    header_matcher.set_regex_match(json_header_matcher.getString("value", ""));
+  } else if (json_header_matcher.hasObject("value")) {
+    header_matcher.set_exact_match(json_header_matcher.getString("value", ""));
+  } else if (json_header_matcher.hasObject("range_match")) {
+    auto* range = header_matcher.mutable_range_match();
+    const auto json_range_match = json_header_matcher.getObject("range_match");
+    range->set_start(json_range_match->getInteger("start"));
+    range->set_end(json_range_match->getInteger("end"));
+  }
 }
 
 void RdsJson::translateQueryParameterMatcher(
@@ -329,7 +339,8 @@ void RdsJson::translateRoute(const Json::Object& json_route, envoy::api::v2::rou
   if (json_route.hasObject("opaque_config")) {
     const Json::ObjectSharedPtr obj = json_route.getObject("opaque_config");
     auto& filter_metadata =
-        (*route.mutable_metadata()->mutable_filter_metadata())[HttpFilterNames::get().ROUTER];
+        (*route.mutable_metadata()
+              ->mutable_filter_metadata())[Extensions::HttpFilters::HttpFilterNames::get().ROUTER];
     obj->iterate([&filter_metadata](const std::string& name, const Json::Object& value) {
       (*filter_metadata.mutable_fields())[name].set_string_value(value.asString());
       return true;

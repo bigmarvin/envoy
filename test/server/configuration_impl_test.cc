@@ -7,11 +7,15 @@
 
 #include "server/configuration_impl.h"
 
+#include "extensions/stat_sinks/well_known_names.h"
+
 #include "test/mocks/common.h"
 #include "test/mocks/network/mocks.h"
 #include "test/mocks/server/mocks.h"
+#include "test/test_common/environment.h"
 #include "test/test_common/utility.h"
 
+#include "fmt/printf.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -122,40 +126,6 @@ TEST_F(ConfigurationImplTest, SetUpstreamClusterPerConnectionBufferLimit) {
                        .info()
                        ->perConnectionBufferLimitBytes());
   server_.thread_local_.shutdownThread();
-}
-
-TEST_F(ConfigurationImplTest, ServiceClusterNotSetWhenLSTracing) {
-  std::string json = R"EOF(
-  {
-    "listeners" : [
-      {
-        "address": "tcp://127.0.0.1:1234",
-        "filters": []
-      }
-    ],
-    "cluster_manager": {
-      "clusters": []
-    },
-    "tracing": {
-      "http": {
-        "driver": {
-          "type": "lightstep",
-          "config": {
-            "collector_cluster": "cluster_0",
-            "access_token_file": "/etc/envoy/envoy.cfg"
-          }
-        }
-      }
-    },
-    "admin": {"access_log_path": "/dev/null", "address": "tcp://1.2.3.4:5678"}
-  }
-  )EOF";
-
-  envoy::config::bootstrap::v2::Bootstrap bootstrap = TestUtility::parseBootstrapFromJson(json);
-
-  server_.local_info_.node_.set_cluster("");
-  MainImpl config;
-  EXPECT_THROW(config.initialize(bootstrap, server_, cluster_manager_factory_), EnvoyException);
 }
 
 TEST_F(ConfigurationImplTest, NullTracerSetWhenTracingConfigurationAbsent) {
@@ -270,7 +240,7 @@ TEST_F(ConfigurationImplTest, ProtoSpecifiedStatsSink) {
   envoy::config::bootstrap::v2::Bootstrap bootstrap = TestUtility::parseBootstrapFromJson(json);
 
   auto& sink = *bootstrap.mutable_stats_sinks()->Add();
-  sink.set_name(Config::StatsSinkNames::get().STATSD);
+  sink.set_name(Extensions::StatSinks::StatsSinkNames::get().STATSD);
   auto& field_map = *sink.mutable_config()->mutable_fields();
   field_map["tcp_cluster_name"].set_string_value("fake_cluster");
 

@@ -56,7 +56,7 @@ public:
   std::unique_ptr<GoogleAsyncClientThreadLocal> tls_;
   MockStubFactory stub_factory_;
   const Protobuf::MethodDescriptor* method_descriptor_;
-  Stats::IsolatedStoreImpl stats_store_;
+  Stats::ScopeSharedPtr stats_store_ = std::make_shared<Stats::IsolatedStoreImpl>();
   std::unique_ptr<GoogleAsyncClientImpl> grpc_client_;
 };
 
@@ -93,7 +93,7 @@ TEST_F(EnvoyGoogleAsyncClientImplTest, RequestHttpStartFail) {
   EXPECT_CALL(*child_span, injectContext(_));
 
   auto* grpc_request = grpc_client_->send(*method_descriptor_, request_msg, grpc_callbacks,
-                                          active_span, Optional<std::chrono::milliseconds>());
+                                          active_span, absl::optional<std::chrono::milliseconds>());
   EXPECT_EQ(grpc_request, nullptr);
 }
 

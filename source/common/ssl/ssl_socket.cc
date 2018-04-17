@@ -16,7 +16,6 @@ namespace Ssl {
 
 SslSocket::SslSocket(Context& ctx, InitialState state)
     : ctx_(dynamic_cast<Ssl::ContextImpl&>(ctx)), ssl_(ctx_.newSsl()) {
-  SSL_set_mode(ssl_.get(), SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
   if (state == InitialState::Client) {
     SSL_set_connect_state(ssl_.get());
   } else {
@@ -137,7 +136,6 @@ void SslSocket::drainErrorQueue() {
     ENVOY_CONN_LOG(debug, "SSL error: {}:{}:{}:{}", callbacks_->connection(), err,
                    ERR_lib_error_string(err), ERR_func_error_string(err),
                    ERR_reason_error_string(err));
-    UNREFERENCED_PARAMETER(err);
   }
   if (saw_error && !saw_counted_error) {
     ctx_.stats().connection_error_.inc();
@@ -153,57 +151,48 @@ Network::IoResult SslSocket::doWrite(Buffer::Instance& write_buffer, bool end_st
     }
   }
 
-  uint64_t original_buffer_length = write_buffer.length();
+  uint64_t bytes_to_write;
+  if (bytes_to_retry_) {
+    bytes_to_write = bytes_to_retry_;
+    bytes_to_retry_ = 0;
+  } else {
+    bytes_to_write = std::min(write_buffer.length(), static_cast<uint64_t>(16384));
+  }
+
   uint64_t total_bytes_written = 0;
-  bool keep_writing = true;
-  while ((original_buffer_length != total_bytes_written) && keep_writing) {
-    // Protect against stack overflow if the buffer has a very large buffer chain.
-    // TODO(mattklein123): See the comment on getRawSlices() for why we have to also check
-    // original_buffer_length != total_bytes_written during loop iteration.
+  while (bytes_to_write > 0) {
     // TODO(mattklein123): As it relates to our fairness efforts, we might want to limit the number
     // of iterations of this loop, either by pure iterations, bytes written, etc.
-    const uint64_t MAX_SLICES = 32;
-    Buffer::RawSlice slices[MAX_SLICES];
-    uint64_t num_slices = write_buffer.getRawSlices(slices, MAX_SLICES);
 
-    uint64_t inner_bytes_written = 0;
-    for (uint64_t i = 0; (i < num_slices) && (original_buffer_length != total_bytes_written); i++) {
-      // SSL_write() requires that if a previous call returns SSL_ERROR_WANT_WRITE, we need to call
-      // it again with the same parameters. Most implementations keep track of the last write size.
-      // In our case we don't need to do that because: a) SSL_write() will not write partial
-      // buffers. b) We only move() into the write buffer, which means that it's impossible for a
-      // particular chain to increase in size. So as long as we start writing where we left off we
-      // are guaranteed to call SSL_write() with the same parameters.
-      int rc = SSL_write(ssl_.get(), slices[i].mem_, slices[i].len_);
-      ENVOY_CONN_LOG(trace, "ssl write returns: {}", callbacks_->connection(), rc);
-      if (rc > 0) {
-        inner_bytes_written += rc;
-        total_bytes_written += rc;
-      } else {
-        int err = SSL_get_error(ssl_.get(), rc);
-        switch (err) {
-        case SSL_ERROR_WANT_WRITE:
-          keep_writing = false;
-          break;
-        case SSL_ERROR_WANT_READ:
-        // Renegotiation has started. We don't handle renegotiation so just fall through.
-        default:
-          drainErrorQueue();
-          return {PostIoAction::Close, total_bytes_written, false};
-        }
-
+    // SSL_write() requires that if a previous call returns SSL_ERROR_WANT_WRITE, we need to call
+    // it again with the same parameters. This is done by tracking last write size, but not write
+    // data, since linearize() will return the same undrained data anyway.
+    ASSERT(bytes_to_write <= write_buffer.length());
+    int rc = SSL_write(ssl_.get(), write_buffer.linearize(bytes_to_write), bytes_to_write);
+    ENVOY_CONN_LOG(trace, "ssl write returns: {}", callbacks_->connection(), rc);
+    if (rc > 0) {
+      ASSERT(rc == static_cast<int>(bytes_to_write));
+      total_bytes_written += rc;
+      write_buffer.drain(rc);
+      bytes_to_write = std::min(write_buffer.length(), static_cast<uint64_t>(16384));
+    } else {
+      int err = SSL_get_error(ssl_.get(), rc);
+      switch (err) {
+      case SSL_ERROR_WANT_WRITE:
+        bytes_to_retry_ = bytes_to_write;
         break;
+      case SSL_ERROR_WANT_READ:
+      // Renegotiation has started. We don't handle renegotiation so just fall through.
+      default:
+        drainErrorQueue();
+        return {PostIoAction::Close, total_bytes_written, false};
       }
-    }
 
-    // Draining must be done within the inner loop, otherwise we will keep getting the same slices
-    // at the beginning of the buffer.
-    if (inner_bytes_written > 0) {
-      write_buffer.drain(inner_bytes_written);
+      break;
     }
   }
 
-  if (total_bytes_written == original_buffer_length && end_stream) {
+  if (write_buffer.length() == 0 && end_stream) {
     shutdownSsl();
   }
 
@@ -217,7 +206,6 @@ void SslSocket::shutdownSsl() {
   if (!shutdown_sent_ && callbacks_->connection().state() != Network::Connection::State::Closed) {
     int rc = SSL_shutdown(ssl_.get());
     ENVOY_CONN_LOG(debug, "SSL shutdown: rc={}", callbacks_->connection(), rc);
-    UNREFERENCED_PARAMETER(rc);
     drainErrorQueue();
     shutdown_sent_ = true;
   }
@@ -286,31 +274,20 @@ std::string SslSocket::uriSanPeerCertificate() {
 }
 
 std::string SslSocket::getUriSanFromCertificate(X509* cert) {
-  STACK_OF(GENERAL_NAME)* altnames = static_cast<STACK_OF(GENERAL_NAME)*>(
-      X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
-
-  if (altnames == nullptr) {
+  bssl::UniquePtr<GENERAL_NAMES> san_names(
+      static_cast<GENERAL_NAMES*>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr)));
+  if (san_names == nullptr) {
     return "";
   }
-
-  std::string result;
-  int n = sk_GENERAL_NAME_num(altnames);
-  if (n > 0) {
-    // Only take the first item in altnames since we only set one uri in cert.
-    GENERAL_NAME* altname = sk_GENERAL_NAME_value(altnames, 0);
-    switch (altname->type) {
-    case GEN_URI:
-      result.append(
-          reinterpret_cast<const char*>(ASN1_STRING_data(altname->d.uniformResourceIdentifier)));
-      break;
-    default:
-      // Default to empty;
-      break;
+  // TODO(PiotrSikora): Figure out if returning only one URI is valid limitation.
+  for (const GENERAL_NAME* san : san_names.get()) {
+    if (san->type == GEN_URI) {
+      ASN1_STRING* str = san->d.uniformResourceIdentifier;
+      return std::string(reinterpret_cast<const char*>(ASN1_STRING_data(str)),
+                         ASN1_STRING_length(str));
     }
   }
-
-  sk_GENERAL_NAME_pop_free(altnames, GENERAL_NAME_free);
-  return result;
+  return "";
 }
 
 void SslSocket::closeSocket(Network::ConnectionEvent) {
@@ -344,7 +321,6 @@ std::string SslSocket::getSubjectFromCertificate(X509* cert) const {
   size_t data_len;
   int rc = BIO_mem_contents(buf.get(), &data, &data_len);
   ASSERT(rc == 1);
-  UNREFERENCED_PARAMETER(rc);
   return std::string(reinterpret_cast<const char*>(data), data_len);
 }
 

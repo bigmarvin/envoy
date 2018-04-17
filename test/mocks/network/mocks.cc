@@ -117,6 +117,12 @@ MockDnsResolver::MockDnsResolver() {
 
 MockDnsResolver::~MockDnsResolver() {}
 
+MockAddressResolver::MockAddressResolver() {
+  ON_CALL(*this, name()).WillByDefault(Return("envoy.mock.resolver"));
+}
+
+MockAddressResolver::~MockAddressResolver() {}
+
 MockReadFilterCallbacks::MockReadFilterCallbacks() {
   ON_CALL(*this, connection()).WillByDefault(ReturnRef(connection_));
   ON_CALL(*this, upstreamHost()).WillByDefault(ReturnPointee(&host_));
@@ -172,8 +178,11 @@ MockListenSocket::MockListenSocket() : local_address_(new Address::Ipv4Instance(
 
 MockListenSocket::~MockListenSocket() {}
 
-MockSocketOptions::MockSocketOptions() {}
-MockSocketOptions::~MockSocketOptions() {}
+MockSocketOption::MockSocketOption() {
+  ON_CALL(*this, setOption(_, _)).WillByDefault(Return(true));
+}
+
+MockSocketOption::~MockSocketOption() {}
 
 MockConnectionSocket::MockConnectionSocket() : local_address_(new Address::Ipv4Instance(80)) {
   ON_CALL(*this, localAddress()).WillByDefault(ReturnRef(local_address_));

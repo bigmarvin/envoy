@@ -90,7 +90,7 @@ public:
    * @return a new ratelimit client. The implementation depends on the configuration of the server.
    */
   virtual RateLimit::ClientPtr
-  rateLimitClient(const Optional<std::chrono::milliseconds>& timeout) PURE;
+  rateLimitClient(const absl::optional<std::chrono::milliseconds>& timeout) PURE;
 
   /**
    * @return Runtime::Loader& the singleton runtime loader for the server.
@@ -135,7 +135,7 @@ public:
   /**
    * Store socket options to be set on the listen socket before listening.
    */
-  virtual void setListenSocketOptions(const Network::Socket::OptionsSharedPtr& options) PURE;
+  virtual void addListenSocketOption(const Network::Socket::OptionConstSharedPtr& option) PURE;
 };
 
 /**
@@ -294,6 +294,17 @@ public:
    *         is deprecated.
    */
   virtual ProtobufTypes::MessagePtr createEmptyConfigProto() { return nullptr; }
+
+  /**
+   * @return ProtobufTypes::MessagePtr create an empty virtual host, route, or weight cluster-local
+   *         config proto message for v2. The filter config, which arrives in an opaque
+   *         google.protobuf.Struct message, will be converted to JSON and then parsed into this
+   *         empty proto. By default, this method returns the same value as createEmptyConfigProto,
+   *         and can be optionally overridden in implementations.
+   */
+  virtual ProtobufTypes::MessagePtr createEmptyRouteConfigProto() {
+    return createEmptyConfigProto();
+  }
 
   /**
    * @return std::string the identifying name for a particular implementation of an http filter

@@ -10,13 +10,6 @@ load(
 
 envoy_package()
 
-envoy_cc_fuzz_test(
-    name = "base64_fuzz_test",
-    srcs = ["base64_fuzz_test.cc"],
-    corpus = "base64_corpus",
-    deps = ["//source/common/common:base64_lib"],
-)
-
 envoy_cc_test(
     name = "base64_test",
     srcs = ["base64_test.cc"],
@@ -24,6 +17,13 @@ envoy_cc_test(
         "//source/common/buffer:buffer_lib",
         "//source/common/common:base64_lib",
     ],
+)
+
+envoy_cc_fuzz_test(
+    name = "base64_fuzz_test",
+    srcs = ["base64_fuzz_test.cc"],
+    corpus = "base64_corpus",
+    deps = ["//source/common/common:base64_lib"],
 )
 
 envoy_cc_test(
@@ -54,12 +54,6 @@ envoy_cc_test(
 )
 
 envoy_cc_test(
-    name = "optional_test",
-    srcs = ["optional_test.cc"],
-    deps = ["//include/envoy/common:optional"],
-)
-
-envoy_cc_test(
     name = "log_macros_test",
     srcs = ["log_macros_test.cc"],
     deps = [
@@ -83,9 +77,35 @@ envoy_cc_test(
 )
 
 envoy_cc_test(
+    name = "perf_annotation_test",
+    srcs = ["perf_annotation_test.cc"],
+    deps = [
+        "//source/common/common:perf_annotation_lib",
+    ],
+)
+
+envoy_cc_test(
+    name = "perf_annotation_disabled_test",
+    srcs = ["perf_annotation_disabled_test.cc"],
+    deps = [
+        "//source/common/common:perf_annotation_lib",
+    ],
+)
+
+envoy_cc_test(
     name = "to_lower_table_test",
     srcs = ["to_lower_table_test.cc"],
     deps = ["//source/common/common:to_lower_table_lib"],
+)
+
+envoy_cc_test(
+    name = "token_bucket_impl_test",
+    srcs = ["token_bucket_impl_test.cc"],
+    deps = [
+        "//source/common/common:token_bucket_impl_lib",
+        "//test/mocks:common_lib",
+        "//test/test_common:utility_lib",
+    ],
 )
 
 envoy_cc_test(

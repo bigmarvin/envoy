@@ -8,6 +8,12 @@ EXTENSIONS = {
     "envoy.access_loggers.http_grpc":                   "//source/extensions/access_loggers/http_grpc:config",
 
     #
+    # Health checkers
+    #
+
+    "envoy.health_checkers.redis":                      "//source/extensions/health_checkers/redis:config",
+
+    #
     # HTTP filters
     #
 
@@ -39,6 +45,8 @@ EXTENSIONS = {
     #       configured on the listener. Do not remove it in that case or configs will fail to load.
     "envoy.filters.listener.original_dst":              "//source/extensions/filters/listener/original_dst:config",
 
+    "envoy.filters.listener.tls_inspector":             "//source/extensions/filters/listener/tls_inspector:config",
+
     #
     # Network filters
     #
@@ -67,4 +75,10 @@ EXTENSIONS = {
     "envoy.tracers.dynamic_ot":                         "//source/extensions/tracers/dynamic_ot:config",
     "envoy.tracers.lightstep":                          "//source/extensions/tracers/lightstep:config",
     "envoy.tracers.zipkin":                             "//source/extensions/tracers/zipkin:config",
+
+    #
+    # Transport sockets
+    #
+
+    "envoy.transport_sockets.capture":                  "//source/extensions/transport_sockets/capture:config",
 }

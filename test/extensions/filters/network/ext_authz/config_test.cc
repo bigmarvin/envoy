@@ -1,3 +1,5 @@
+#include "envoy/config/filter/network/ext_authz/v2/ext_authz.pb.validate.h"
+
 #include "extensions/filters/network/ext_authz/config.h"
 
 #include "test/mocks/server/mocks.h"
@@ -40,8 +42,7 @@ TEST(ExtAuthzFilterConfigTest, ExtAuthzCorrectProto) {
       .WillOnce(Invoke([](const envoy::api::v2::core::GrpcService&, Stats::Scope&, bool) {
         return std::make_unique<NiceMock<Grpc::MockAsyncClientFactory>>();
       }));
-  Server::Configuration::NetworkFilterFactoryCb cb =
-      factory.createFilterFactoryFromProto(*proto_config, context);
+  Network::FilterFactoryCb cb = factory.createFilterFactoryFromProto(*proto_config, context);
   Network::MockConnection connection;
   EXPECT_CALL(connection, addReadFilter(_));
   cb(connection);

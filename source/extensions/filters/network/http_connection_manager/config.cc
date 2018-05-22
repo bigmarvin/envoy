@@ -7,10 +7,8 @@
 
 #include "envoy/config/filter/network/http_connection_manager/v2/http_connection_manager.pb.validate.h"
 #include "envoy/filesystem/filesystem.h"
-#include "envoy/network/connection.h"
 #include "envoy/registry/registry.h"
 #include "envoy/server/admin.h"
-#include "envoy/server/options.h"
 #include "envoy/stats/stats.h"
 
 #include "common/access_log/access_log_impl.h"
@@ -35,8 +33,8 @@ namespace HttpConnectionManager {
 SINGLETON_MANAGER_REGISTRATION(date_provider);
 SINGLETON_MANAGER_REGISTRATION(route_config_provider_manager);
 
-Server::Configuration::NetworkFilterFactoryCb
-HttpConnectionManagerFilterConfigFactory::createFilter(
+Network::FilterFactoryCb
+HttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProtoTyped(
     const envoy::config::filter::network::http_connection_manager::v2::HttpConnectionManager&
         proto_config,
     Server::Configuration::FactoryContext& context) {
@@ -50,9 +48,7 @@ HttpConnectionManagerFilterConfigFactory::createFilter(
   std::shared_ptr<Router::RouteConfigProviderManager> route_config_provider_manager =
       context.singletonManager().getTyped<Router::RouteConfigProviderManager>(
           SINGLETON_MANAGER_REGISTERED_NAME(route_config_provider_manager), [&context] {
-            return std::make_shared<Router::RouteConfigProviderManagerImpl>(
-                context.runtime(), context.dispatcher(), context.random(), context.localInfo(),
-                context.threadLocal(), context.admin());
+            return std::make_shared<Router::RouteConfigProviderManagerImpl>(context.admin());
           });
 
   std::shared_ptr<HttpConnectionManagerConfig> filter_config(new HttpConnectionManagerConfig(
@@ -69,22 +65,11 @@ HttpConnectionManagerFilterConfigFactory::createFilter(
   };
 }
 
-Server::Configuration::NetworkFilterFactoryCb
-HttpConnectionManagerFilterConfigFactory::createFilterFactory(
+Network::FilterFactoryCb HttpConnectionManagerFilterConfigFactory::createFilterFactory(
     const Json::Object& json_config, Server::Configuration::FactoryContext& context) {
   envoy::config::filter::network::http_connection_manager::v2::HttpConnectionManager proto_config;
   Config::FilterJson::translateHttpConnectionManager(json_config, proto_config);
-  return createFilter(proto_config, context);
-}
-
-Server::Configuration::NetworkFilterFactoryCb
-HttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProto(
-    const Protobuf::Message& proto_config, Server::Configuration::FactoryContext& context) {
-  return createFilter(
-      MessageUtil::downcastAndValidate<const envoy::config::filter::network::
-                                           http_connection_manager::v2::HttpConnectionManager&>(
-          proto_config),
-      context);
+  return createFilterFactoryFromProtoTyped(proto_config, context);
 }
 
 /**
@@ -133,9 +118,8 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
                                                                          context_.listenerScope())),
       proxy_100_continue_(config.proxy_100_continue()) {
 
-  route_config_provider_ = Router::RouteConfigProviderUtil::create(
-      config, context_.runtime(), context_.clusterManager(), context_.scope(), stats_prefix_,
-      context_.initManager(), route_config_provider_manager_);
+  route_config_provider_ = Router::RouteConfigProviderUtil::create(config, context_, stats_prefix_,
+                                                                   route_config_provider_manager_);
 
   switch (config.forward_client_cert_details()) {
   case envoy::config::filter::network::http_connection_manager::v2::HttpConnectionManager::SANITIZE:
@@ -162,14 +146,20 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
   }
 
   const auto& set_current_client_cert_details = config.set_current_client_cert_details();
+  if (set_current_client_cert_details.cert()) {
+    set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::Cert);
+  }
   if (PROTOBUF_GET_WRAPPED_OR_DEFAULT(set_current_client_cert_details, subject, false)) {
     set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::Subject);
   }
   if (PROTOBUF_GET_WRAPPED_OR_DEFAULT(set_current_client_cert_details, san, false)) {
     set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::SAN);
   }
-  if (set_current_client_cert_details.cert()) {
-    set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::Cert);
+  if (set_current_client_cert_details.uri()) {
+    set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::URI);
+  }
+  if (set_current_client_cert_details.dns()) {
+    set_current_client_cert_details_.push_back(Http::ClientCertDetailsType::DNS);
   }
 
   if (config.has_add_user_agent() && config.add_user_agent().value()) {
@@ -249,7 +239,7 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
     auto& factory =
         Config::Utility::getAndCheckFactory<Server::Configuration::NamedHttpFilterConfigFactory>(
             string_name);
-    Server::Configuration::HttpFilterFactoryCb callback;
+    Http::FilterFactoryCb callback;
     if (filter_config->getBoolean("deprecated_v1", false)) {
       callback = factory.createFilterFactory(*filter_config->getObject("value", true),
                                              stats_prefix_, context);
@@ -288,7 +278,7 @@ HttpConnectionManagerConfig::createCodec(Network::Connection& connection,
 }
 
 void HttpConnectionManagerConfig::createFilterChain(Http::FilterChainFactoryCallbacks& callbacks) {
-  for (const Server::Configuration::HttpFilterFactoryCb& factory : filter_factories_) {
+  for (const Http::FilterFactoryCb& factory : filter_factories_) {
     factory(callbacks);
   }
 }

@@ -2,10 +2,15 @@ licenses(["notice"])  # Apache 2
 
 load(
     "//bazel:envoy_build_system.bzl",
+    "envoy_cc_fuzz_test",
     "envoy_cc_test",
     "envoy_cc_test_library",
     "envoy_package",
     "envoy_select_hot_restart",
+)
+load(
+    "//source/extensions:all_extensions.bzl",
+    "envoy_all_extensions",
 )
 
 envoy_package()
@@ -44,6 +49,7 @@ envoy_cc_test(
         "//source/server:connection_handler_lib",
         "//test/mocks/network:network_mocks",
         "//test/mocks/server:server_mocks",
+        "//test/test_common:network_utility_lib",
     ],
 )
 
@@ -126,10 +132,13 @@ envoy_cc_test(
         ":utility_lib",
         "//source/common/api:os_sys_calls_lib",
         "//source/common/config:metadata_lib",
+        "//source/common/network:addr_family_aware_socket_option_lib",
         "//source/common/network:listen_socket_lib",
         "//source/common/network:socket_option_lib",
         "//source/common/network:utility_lib",
+        "//source/common/ssl:ssl_socket_lib",
         "//source/extensions/filters/listener/original_dst:config",
+        "//source/extensions/filters/listener/tls_inspector:config",
         "//source/extensions/filters/network/http_connection_manager:config",
         "//source/extensions/transport_sockets/raw_buffer:config",
         "//source/extensions/transport_sockets/ssl:config",
@@ -142,10 +151,25 @@ envoy_cc_test(
     ],
 )
 
+envoy_cc_fuzz_test(
+    name = "server_fuzz_test",
+    srcs = ["server_fuzz_test.cc"],
+    corpus = "server_corpus",
+    deps = [
+        "//source/common/thread_local:thread_local_lib",
+        "//source/server:server_lib",
+        "//test/integration:integration_lib",
+        "//test/mocks/server:server_mocks",
+        "//test/mocks/stats:stats_mocks",
+        "//test/test_common:environment_lib",
+    ] + envoy_all_extensions(),
+)
+
 envoy_cc_test(
     name = "server_test",
     srcs = ["server_test.cc"],
     data = [
+        ":cluster_dupe_bootstrap.yaml",
         ":empty_bootstrap.yaml",
         ":node_bootstrap.yaml",
         "//test/config/integration:server.json",

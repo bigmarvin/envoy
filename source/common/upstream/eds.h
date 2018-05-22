@@ -23,13 +23,11 @@ public:
                  Event::Dispatcher& dispatcher, Runtime::RandomGenerator& random,
                  bool added_via_api);
 
-  const std::string versionInfo() const { return subscription_->versionInfo(); }
-
   // Upstream::Cluster
   InitializePhase initializePhase() const override { return InitializePhase::Secondary; }
 
   // Config::SubscriptionCallbacks
-  void onConfigUpdate(const ResourceVector& resources) override;
+  void onConfigUpdate(const ResourceVector& resources, const std::string& version_info) override;
   void onConfigUpdateFailed(const EnvoyException* e) override;
   std::string resourceName(const ProtobufWkt::Any& resource) override {
     return MessageUtil::anyConvert<envoy::api::v2::ClusterLoadAssignment>(resource).cluster_name();
@@ -38,8 +36,9 @@ public:
 private:
   using LocalityWeightsMap =
       std::unordered_map<envoy::api::v2::core::Locality, uint32_t, LocalityHash, LocalityEqualTo>;
-  void updateHostsPerLocality(HostSet& host_set, const HostVector& new_hosts,
-                              LocalityWeightsMap& locality_weights_map);
+  bool updateHostsPerLocality(HostSet& host_set, const HostVector& new_hosts,
+                              LocalityWeightsMap& locality_weights_map,
+                              LocalityWeightsMap& new_locality_weights_map);
 
   // ClusterImplBase
   void startPreInit() override;
@@ -48,7 +47,7 @@ private:
   std::unique_ptr<Config::Subscription<envoy::api::v2::ClusterLoadAssignment>> subscription_;
   const LocalInfo::LocalInfo& local_info_;
   const std::string cluster_name_;
-  LocalityWeightsMap current_locality_weights_map_;
+  std::vector<LocalityWeightsMap> locality_weights_map_;
 };
 
 } // namespace Upstream

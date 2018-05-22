@@ -132,7 +132,7 @@ IntegrationTcpClient::IntegrationTcpClient(Event::Dispatcher& dispatcher,
   EXPECT_CALL(factory, create_(_, _))
       .WillOnce(Invoke([&](std::function<void()> below_low,
                            std::function<void()> above_high) -> Buffer::Instance* {
-        client_write_buffer_ = new MockWatermarkBuffer(below_low, above_high);
+        client_write_buffer_ = new NiceMock<MockWatermarkBuffer>(below_low, above_high);
         return client_write_buffer_;
       }));
 
@@ -174,11 +174,13 @@ void IntegrationTcpClient::waitForHalfClose() {
 
 void IntegrationTcpClient::readDisable(bool disabled) { connection_->readDisable(disabled); }
 
-void IntegrationTcpClient::write(const std::string& data, bool end_stream) {
+void IntegrationTcpClient::write(const std::string& data, bool end_stream, bool verify) {
   Buffer::OwnedImpl buffer(data);
-  EXPECT_CALL(*client_write_buffer_, move(_));
-  if (!data.empty()) {
-    EXPECT_CALL(*client_write_buffer_, write(_)).Times(AtLeast(1));
+  if (verify) {
+    EXPECT_CALL(*client_write_buffer_, move(_));
+    if (!data.empty()) {
+      EXPECT_CALL(*client_write_buffer_, write(_)).Times(AtLeast(1));
+    }
   }
 
   int bytes_expected = client_write_buffer_->bytes_written() + data.size();
@@ -186,7 +188,10 @@ void IntegrationTcpClient::write(const std::string& data, bool end_stream) {
   connection_->write(buffer, end_stream);
   do {
     connection_->dispatcher().run(Event::Dispatcher::RunType::NonBlock);
-  } while (client_write_buffer_->bytes_written() != bytes_expected);
+  } while (client_write_buffer_->bytes_written() != bytes_expected && !disconnected_);
+  // If we disconnect part way through the write, then we should fail, since write() is always
+  // expected to succeed.
+  EXPECT_TRUE(!disconnected_ || client_write_buffer_->bytes_written() == bytes_expected);
 }
 
 void IntegrationTcpClient::ConnectionCallbacks::onEvent(Network::ConnectionEvent event) {
@@ -326,8 +331,8 @@ void BaseIntegrationTest::registerTestServerPorts(const std::vector<std::string>
 
 void BaseIntegrationTest::createGeneratedApiTestServer(const std::string& bootstrap_path,
                                                        const std::vector<std::string>& port_names) {
-  test_server_ =
-      IntegrationTestServer::create(bootstrap_path, version_, pre_worker_start_test_steps_);
+  test_server_ = IntegrationTestServer::create(bootstrap_path, version_,
+                                               pre_worker_start_test_steps_, deterministic_);
   if (config_helper_.bootstrap().static_resources().listeners_size() > 0) {
     // Wait for listeners to be created before invoking registerTestServerPorts() below, as that
     // needs to know about the bound listener ports.
@@ -356,7 +361,8 @@ void BaseIntegrationTest::createApiTestServer(const ApiFilesystemConfig& api_fil
 void BaseIntegrationTest::createTestServer(const std::string& json_path,
                                            const std::vector<std::string>& port_names) {
   test_server_ = IntegrationTestServer::create(
-      TestEnvironment::temporaryFileSubstitute(json_path, port_map_, version_), version_, nullptr);
+      TestEnvironment::temporaryFileSubstitute(json_path, port_map_, version_), version_, nullptr,
+      deterministic_);
   registerTestServerPorts(port_names);
 }
 

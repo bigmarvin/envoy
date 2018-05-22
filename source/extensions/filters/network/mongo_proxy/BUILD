@@ -32,7 +32,7 @@ envoy_cc_library(
         "//source/common/common:assert_lib",
         "//source/common/common:byte_order_lib",
         "//source/common/common:hex_lib",
-        "//source/common/common:logger_lib",
+        "//source/common/common:minimal_logger_lib",
         "//source/common/common:utility_lib",
     ],
 )
@@ -46,7 +46,7 @@ envoy_cc_library(
         ":codec_interface",
         "//include/envoy/buffer:buffer_interface",
         "//source/common/common:assert_lib",
-        "//source/common/common:logger_lib",
+        "//source/common/common:minimal_logger_lib",
     ],
 )
 
@@ -69,7 +69,7 @@ envoy_cc_library(
         "//include/envoy/stats:stats_macros",
         "//source/common/buffer:buffer_lib",
         "//source/common/common:assert_lib",
-        "//source/common/common:logger_lib",
+        "//source/common/common:minimal_logger_lib",
         "//source/common/common:utility_lib",
         "//source/common/network:filter_lib",
         "//source/common/protobuf:utility_lib",
@@ -95,8 +95,8 @@ envoy_cc_library(
     deps = [
         ":proxy_lib",
         "//include/envoy/registry",
-        "//include/envoy/server:filter_config_interface",
         "//source/common/config:filter_json_lib",
         "//source/extensions/filters/network:well_known_names",
+        "//source/extensions/filters/network/common:factory_base_lib",
     ],
 )

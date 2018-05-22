@@ -46,7 +46,7 @@ public:
   /**
    * @return host specific counters.
    */
-  virtual std::list<Stats::CounterSharedPtr> counters() const PURE;
+  virtual std::vector<Stats::CounterSharedPtr> counters() const PURE;
 
   /**
    * Create a connection for this host.
@@ -73,7 +73,7 @@ public:
   /**
    * @return host specific gauges.
    */
-  virtual std::list<Stats::GaugeSharedPtr> gauges() const PURE;
+  virtual std::vector<Stats::GaugeSharedPtr> gauges() const PURE;
 
   /**
    * Atomically clear a health flag for a host. Flags are specified in HealthFlags.
@@ -358,6 +358,7 @@ public:
   COUNTER  (update_success)                                                                        \
   COUNTER  (update_failure)                                                                        \
   COUNTER  (update_empty)                                                                          \
+  COUNTER  (update_no_rebuild)                                                                     \
   GAUGE    (version)
 // clang-format on
 
@@ -396,8 +397,8 @@ public:
     // Use the downstream protocol (HTTP1.1, HTTP2) for upstream connections as well, if available.
     // This is used when creating connection pools.
     static const uint64_t USE_DOWNSTREAM_PROTOCOL = 0x2;
-    // Use IP_FREEBIND socket option when binding.
-    static const uint64_t FREEBIND = 0x4;
+    // Whether connections should be immediately closed upon health failure.
+    static const uint64_t CLOSE_CONNECTIONS_ON_HOST_HEALTH_FAILURE = 0x4;
   };
 
   virtual ~ClusterInfo() {}
@@ -520,6 +521,19 @@ public:
    * @return const envoy::api::v2::core::Metadata& the configuration metadata for this cluster.
    */
   virtual const envoy::api::v2::core::Metadata& metadata() const PURE;
+
+  /**
+   *
+   * @return const Network::ConnectionSocket::OptionsSharedPtr& socket options for all
+   *         connections for this cluster.
+   */
+  virtual const Network::ConnectionSocket::OptionsSharedPtr& clusterSocketOptions() const PURE;
+
+  /**
+   * @return whether to skip waiting for health checking before draining connections
+   *         after a host is removed from service discovery.
+   */
+  virtual bool drainConnectionsOnHostRemoval() const PURE;
 };
 
 typedef std::shared_ptr<const ClusterInfo> ClusterInfoConstSharedPtr;

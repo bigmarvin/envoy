@@ -11,6 +11,7 @@
 #include <string>
 
 #include "common/common/assert.h"
+#include "common/common/fmt.h"
 #include "common/network/address_impl.h"
 #include "common/network/utility.h"
 
@@ -37,7 +38,21 @@ DnsResolverImpl::DnsResolverImpl(
     std::vector<std::string> resolver_addrs;
     resolver_addrs.reserve(resolvers.size());
     for (const auto& resolver : resolvers) {
-      resolver_addrs.push_back(resolver->asString());
+      // This should be an IP address (i.e. not a pipe).
+      if (resolver->ip() == nullptr) {
+        ares_destroy(channel_);
+        ares_library_cleanup();
+        throw EnvoyException(
+            fmt::format("DNS resolver '{}' is not an IP address", resolver->asString()));
+      }
+      // Note that the ip()->port() may be zero if the port is not fully specified by the
+      // Address::Instance.
+      // resolver->asString() is avoided as that format may be modified by custom
+      // Address::Instance implementations in ways that make the <port> not a simple
+      // integer. See https://github.com/envoyproxy/envoy/pull/3366.
+      resolver_addrs.push_back(fmt::format(resolver->ip()->ipv6() ? "[{}]:{}" : "{}:{}",
+                                           resolver->ip()->addressAsString(),
+                                           resolver->ip()->port()));
     }
     const std::string resolvers_csv = StringUtil::join(resolver_addrs, ",");
     int result = ares_set_servers_ports_csv(channel_, resolvers_csv.c_str());

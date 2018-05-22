@@ -148,7 +148,9 @@ private:
     const Router::RateLimitPolicy& rateLimitPolicy() const override { return rate_limit_policy_; }
     const Router::CorsPolicy* corsPolicy() const override { return nullptr; }
     const Router::Config& routeConfig() const override { return route_configuration_; }
-    const Protobuf::Message* perFilterConfig(const std::string&) const override { return nullptr; }
+    const Router::RouteSpecificFilterConfig* perFilterConfig(const std::string&) const override {
+      return nullptr;
+    }
 
     static const NullRateLimitPolicy rate_limit_policy_;
     static const NullConfig route_configuration_;
@@ -197,13 +199,21 @@ private:
     const Router::VirtualHost& virtualHost() const override { return virtual_host_; }
     bool autoHostRewrite() const override { return false; }
     bool useWebSocket() const override { return false; }
+    Http::WebSocketProxyPtr createWebSocketProxy(Http::HeaderMap&, const RequestInfo::RequestInfo&,
+                                                 Http::WebSocketProxyCallbacks&,
+                                                 Upstream::ClusterManager&,
+                                                 Network::ReadFilterCallbacks*) const override {
+      NOT_IMPLEMENTED;
+    }
     bool includeVirtualHostRateLimits() const override { return true; }
     const envoy::api::v2::core::Metadata& metadata() const override { return metadata_; }
     const Router::PathMatchCriterion& pathMatchCriterion() const override {
       return path_match_criterion_;
     }
 
-    const Protobuf::Message* perFilterConfig(const std::string&) const override { return nullptr; }
+    const Router::RouteSpecificFilterConfig* perFilterConfig(const std::string&) const override {
+      return nullptr;
+    }
 
     static const NullRateLimitPolicy rate_limit_policy_;
     static const NullRetryPolicy retry_policy_;
@@ -226,7 +236,9 @@ private:
     const Router::DirectResponseEntry* directResponseEntry() const override { return nullptr; }
     const Router::RouteEntry* routeEntry() const override { return &route_entry_; }
     const Router::Decorator* decorator() const override { return nullptr; }
-    const Protobuf::Message* perFilterConfig(const std::string&) const override { return nullptr; }
+    const Router::RouteSpecificFilterConfig* perFilterConfig(const std::string&) const override {
+      return nullptr;
+    }
 
     RouteEntryImpl route_entry_;
   };
@@ -249,6 +261,19 @@ private:
   void continueDecoding() override { NOT_IMPLEMENTED; }
   void addDecodedData(Buffer::Instance&, bool) override { NOT_IMPLEMENTED; }
   const Buffer::Instance* decodingBuffer() override { return buffered_body_.get(); }
+  void sendLocalReply(Code code, const std::string& body,
+                      std::function<void(HeaderMap& headers)> modify_headers) override {
+    Utility::sendLocalReply(
+        is_grpc_request_,
+        [this, modify_headers](HeaderMapPtr&& headers, bool end_stream) -> void {
+          if (modify_headers != nullptr) {
+            modify_headers(*headers);
+          }
+          encodeHeaders(std::move(headers), end_stream);
+        },
+        [this](Buffer::Instance& data, bool end_stream) -> void { encodeData(data, end_stream); },
+        remote_closed_, code, body);
+  }
   // The async client won't pause if sending an Expect: 100-Continue so simply
   // swallows any incoming encode100Continue.
   void encode100ContinueHeaders(HeaderMapPtr&&) override {}
@@ -272,6 +297,7 @@ private:
   bool local_closed_{};
   bool remote_closed_{};
   Buffer::InstancePtr buffered_body_;
+  bool is_grpc_request_{};
   friend class AsyncClientImpl;
 };
 

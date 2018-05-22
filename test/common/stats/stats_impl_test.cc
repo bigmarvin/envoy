@@ -8,9 +8,14 @@
 #include "common/config/well_known_names.h"
 #include "common/stats/stats_impl.h"
 
+#include "test/mocks/stats/mocks.h"
+#include "test/test_common/logging.h"
 #include "test/test_common/utility.h"
 
 #include "gtest/gtest.h"
+
+using testing::NiceMock;
+using testing::ReturnPointee;
 
 namespace Envoy {
 namespace Stats {
@@ -52,7 +57,11 @@ TEST(StatsIsolatedStoreImplTest, All) {
   ScopePtr scope2 = scope1->createScope("foo.");
   EXPECT_EQ("scope1.foo.bar", scope2->counter("bar").name());
 
-  EXPECT_EQ(3UL, store.counters().size());
+  // Validate that we sanitize away bad characters in the stats prefix.
+  ScopePtr scope3 = scope1->createScope(std::string("foo:\0:.", 7));
+  EXPECT_EQ("scope1.foo___.bar", scope3->counter("bar").name());
+
+  EXPECT_EQ(4UL, store.counters().size());
   EXPECT_EQ(2UL, store.gauges().size());
 }
 
@@ -466,6 +475,66 @@ TEST(TagProducerTest, CheckConstructor) {
   EXPECT_THROW_WITH_MESSAGE(
       TagProducerImpl{stats_config}, EnvoyException,
       "No regex specified for tag specifier and no default regex for name: 'test_extractor'");
+}
+
+// Validate truncation behavior of RawStatData.
+TEST(RawStatDataTest, Truncate) {
+  HeapRawStatDataAllocator alloc;
+  const std::string long_string(RawStatData::maxNameLength() + 1, 'A');
+  RawStatData* stat{};
+  EXPECT_LOG_CONTAINS("warning", "is too long with", stat = alloc.alloc(long_string));
+  alloc.free(*stat);
+}
+
+TEST(RawStatDataTest, HeapAlloc) {
+  HeapRawStatDataAllocator alloc;
+  RawStatData* stat_1 = alloc.alloc("ref_name");
+  ASSERT_NE(stat_1, nullptr);
+  RawStatData* stat_2 = alloc.alloc("ref_name");
+  ASSERT_NE(stat_2, nullptr);
+  RawStatData* stat_3 = alloc.alloc("not_ref_name");
+  ASSERT_NE(stat_3, nullptr);
+  EXPECT_EQ(stat_1, stat_2);
+  EXPECT_NE(stat_1, stat_3);
+  EXPECT_NE(stat_2, stat_3);
+  alloc.free(*stat_1);
+  alloc.free(*stat_2);
+  alloc.free(*stat_3);
+}
+
+TEST(SourceImplTest, Caching) {
+  NiceMock<MockStore> store;
+  std::vector<CounterSharedPtr> stored_counters;
+  std::vector<GaugeSharedPtr> stored_gauges;
+  std::vector<ParentHistogramSharedPtr> stored_histograms;
+
+  ON_CALL(store, counters()).WillByDefault(ReturnPointee(&stored_counters));
+  ON_CALL(store, gauges()).WillByDefault(ReturnPointee(&stored_gauges));
+  ON_CALL(store, histograms()).WillByDefault(ReturnPointee(&stored_histograms));
+
+  SourceImpl source(store);
+
+  // Once cached, new values should not be reflected by the return value.
+  stored_counters.push_back(std::make_shared<MockCounter>());
+  EXPECT_EQ(source.cachedCounters(), stored_counters);
+  stored_counters.push_back(std::make_shared<MockCounter>());
+  EXPECT_NE(source.cachedCounters(), stored_counters);
+
+  stored_gauges.push_back(std::make_shared<MockGauge>());
+  EXPECT_EQ(source.cachedGauges(), stored_gauges);
+  stored_gauges.push_back(std::make_shared<MockGauge>());
+  EXPECT_NE(source.cachedGauges(), stored_gauges);
+
+  stored_histograms.push_back(std::make_shared<MockParentHistogram>());
+  EXPECT_EQ(source.cachedHistograms(), stored_histograms);
+  stored_histograms.push_back(std::make_shared<MockParentHistogram>());
+  EXPECT_NE(source.cachedHistograms(), stored_histograms);
+
+  // After clearing, the new values should be reflected in the cache.
+  source.clearCache();
+  EXPECT_EQ(source.cachedCounters(), stored_counters);
+  EXPECT_EQ(source.cachedGauges(), stored_gauges);
+  EXPECT_EQ(source.cachedHistograms(), stored_histograms);
 }
 
 } // namespace Stats

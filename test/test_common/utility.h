@@ -14,8 +14,10 @@
 #include "envoy/network/address.h"
 #include "envoy/stats/stats.h"
 
+#include "common/common/c_smart_ptr.h"
 #include "common/http/header_map_impl.h"
 #include "common/protobuf/utility.h"
+#include "common/stats/stats_impl.h"
 
 #include "test/test_common/printers.h"
 
@@ -57,6 +59,22 @@ namespace Envoy {
   } catch (EnvoyException & e) {                                                                   \
     ADD_FAILURE() << "Unexpected exception: " << std::string(e.what());                            \
   }
+
+/*
+  Macro to use instead of EXPECT_DEATH when stderr is produced by a logger.
+  It temporarily installs stderr sink and restores the original logger sink after the test
+  completes and sdterr_sink object goes of of scope.
+  EXPECT_DEATH(statement, regex) test passes when statement causes crash and produces error message
+  matching regex. Test fails when statement does not crash or it crashes but message does not
+  match regex. If a message produced during crash is redirected away from strerr, the test fails.
+  By installing StderrSinkDelegate, the macro forces EXPECT_DEATH to send any output produced by
+  statement to stderr.
+*/
+#define EXPECT_DEATH_LOG_TO_STDERR(statement, message)                                             \
+  do {                                                                                             \
+    Logger::StderrSinkDelegate stderr_sink(Logger::Registry::getSink());                           \
+    EXPECT_DEATH(statement, message);                                                              \
+  } while (false)
 
 // Random number generator which logs its seed to stderr. To repeat a test run with a non-zero seed
 // one can run the test with --test_arg=--gtest_random_seed=[seed]
@@ -239,6 +257,22 @@ public:
   ipTestParamsToString(const testing::TestParamInfo<Network::Address::IpVersion>& params) {
     return params.param == Network::Address::IpVersion::v4 ? "IPv4" : "IPv6";
   }
+
+  /**
+   * Return flip-ordered bytes.
+   * @param bytes input bytes.
+   * @return Type flip-ordered bytes.
+   */
+  template <class Type> static Type flipOrder(const Type& bytes) {
+    Type result{0};
+    Type data = bytes;
+    for (Type i = 0; i < sizeof(Type); i++) {
+      result <<= 8;
+      result |= (data & Type(0xFF));
+      data >>= 8;
+    }
+    return result;
+  }
 };
 
 /**
@@ -297,7 +331,9 @@ public:
   }
 
   using HeaderMapImpl::addCopy;
+  using HeaderMapImpl::remove;
   void addCopy(const std::string& key, const std::string& value);
+  void remove(const std::string& key);
   std::string get_(const std::string& key);
   std::string get_(const LowerCaseString& key);
   bool has(const std::string& key);
@@ -306,8 +342,46 @@ public:
 
 } // namespace Http
 
+namespace Stats {
+/**
+ * This is a heap test allocator that works similar to how the shared memory allocator works in
+ * terms of reference counting, etc.
+ */
+class TestAllocator : public RawStatDataAllocator {
+public:
+  ~TestAllocator() { EXPECT_TRUE(stats_.empty()); }
+
+  RawStatData* alloc(const std::string& name) override {
+    CSmartPtr<RawStatData, freeAdapter>& stat_ref = stats_[name];
+    if (!stat_ref) {
+      stat_ref.reset(static_cast<RawStatData*>(::calloc(RawStatData::size(), 1)));
+      stat_ref->initialize(name);
+    } else {
+      stat_ref->ref_count_++;
+    }
+
+    return stat_ref.get();
+  }
+
+  void free(RawStatData& data) override {
+    if (--data.ref_count_ > 0) {
+      return;
+    }
+
+    if (stats_.erase(std::string(data.name_)) == 0) {
+      FAIL();
+    }
+  }
+
+private:
+  static void freeAdapter(RawStatData* data) { ::free(data); }
+  std::unordered_map<std::string, CSmartPtr<RawStatData, freeAdapter>> stats_;
+};
+
+} // namespace Stats
+
 MATCHER_P(ProtoEq, rhs, "") { return TestUtility::protoEqual(arg, rhs); }
 
 MATCHER_P(RepeatedProtoEq, rhs, "") { return TestUtility::repeatedPtrFieldEqual(arg, rhs); }
 
-} // Envoy
+} // namespace Envoy

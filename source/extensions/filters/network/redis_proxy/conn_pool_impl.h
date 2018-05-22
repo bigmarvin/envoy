@@ -48,7 +48,7 @@ public:
 
   ~ClientImpl();
 
-  // Redis::ConnPool::Client
+  // RedisProxy::ConnPool::Client
   void addConnectionCallbacks(Network::ConnectionCallbacks& callbacks) override {
     connection_->addConnectionCallbacks(callbacks);
   }
@@ -72,7 +72,7 @@ private:
     PendingRequest(ClientImpl& parent, PoolCallbacks& callbacks);
     ~PendingRequest();
 
-    // Redis::ConnPool::PoolRequest
+    // RedisProxy::ConnPool::PoolRequest
     void cancel() override;
 
     ClientImpl& parent_;
@@ -86,7 +86,7 @@ private:
   void onData(Buffer::Instance& data);
   void putOutlierEvent(Upstream::Outlier::Result result);
 
-  // Redis::DecoderCallbacks
+  // RedisProxy::DecoderCallbacks
   void onRespValue(RespValuePtr&& value) override;
 
   // Network::ConnectionCallbacks
@@ -107,7 +107,7 @@ private:
 
 class ClientFactoryImpl : public ClientFactory {
 public:
-  // Redis::ConnPool::ClientFactoryImpl
+  // RedisProxy::ConnPool::ClientFactoryImpl
   ClientPtr create(Upstream::HostConstSharedPtr host, Event::Dispatcher& dispatcher,
                    const Config& config) override;
 
@@ -124,7 +124,7 @@ public:
       ThreadLocal::SlotAllocator& tls,
       const envoy::config::filter::network::redis_proxy::v2::RedisProxy::ConnPoolSettings& config);
 
-  // Redis::ConnPool::Instance
+  // RedisProxy::ConnPool::Instance
   PoolRequest* makeRequest(const std::string& hash_key, const RespValue& request,
                            PoolCallbacks& callbacks) override;
 
@@ -158,7 +158,7 @@ private:
     Event::Dispatcher& dispatcher_;
     Upstream::ThreadLocalCluster* cluster_;
     std::unordered_map<Upstream::HostConstSharedPtr, ThreadLocalActiveClientPtr> client_map_;
-    Common::CallbackHandle* local_host_set_member_update_cb_handle_;
+    Envoy::Common::CallbackHandle* local_host_set_member_update_cb_handle_;
   };
 
   struct LbContextImpl : public Upstream::LoadBalancerContext {
@@ -166,7 +166,7 @@ private:
     // TODO(danielhochman): convert to HashUtil::xxHash64 when we have a migration strategy.
     // Upstream::LoadBalancerContext
     absl::optional<uint64_t> computeHashKey() override { return hash_key_; }
-    const Router::MetadataMatchCriteria* metadataMatchCriteria() const override { return nullptr; }
+    const Router::MetadataMatchCriteria* metadataMatchCriteria() override { return nullptr; }
     const Network::Connection* downstreamConnection() const override { return nullptr; }
 
     const absl::optional<uint64_t> hash_key_;

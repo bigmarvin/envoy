@@ -39,7 +39,7 @@ envoy_cc_library(
     deps = [
         ":codec_interface",
         "//source/common/common:assert_lib",
-        "//source/common/common:logger_lib",
+        "//source/common/common:minimal_logger_lib",
         "//source/common/common:utility_lib",
     ],
 )
@@ -53,7 +53,7 @@ envoy_cc_library(
         ":conn_pool_interface",
         ":supported_commands_lib",
         "//source/common/common:assert_lib",
-        "//source/common/common:logger_lib",
+        "//source/common/common:minimal_logger_lib",
         "//source/common/common:to_lower_table_lib",
     ],
 )
@@ -107,9 +107,9 @@ envoy_cc_library(
     hdrs = ["config.h"],
     deps = [
         "//include/envoy/registry",
-        "//include/envoy/server:filter_config_interface",
         "//source/common/config:filter_json_lib",
         "//source/extensions/filters/network:well_known_names",
+        "//source/extensions/filters/network/common:factory_base_lib",
         "//source/extensions/filters/network/redis_proxy:codec_lib",
         "//source/extensions/filters/network/redis_proxy:command_splitter_lib",
         "//source/extensions/filters/network/redis_proxy:conn_pool_lib",

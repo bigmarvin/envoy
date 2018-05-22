@@ -30,7 +30,8 @@
 #endif
 
 namespace Envoy {
-OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_restart_version_cb,
+OptionsImpl::OptionsImpl(int argc, const char* const* argv,
+                         const HotRestartVersionCb& hot_restart_version_cb,
                          spdlog::level::level_enum default_log_level) {
   std::string log_levels_string = "Log levels: ";
   for (size_t i = 0; i < ARRAY_SIZE(spdlog::level::level_names); i++) {
@@ -38,7 +39,6 @@ OptionsImpl::OptionsImpl(int argc, char** argv, const HotRestartVersionCb& hot_r
   }
   log_levels_string +=
       fmt::format("\nDefault is [{}]", spdlog::level::level_names[default_log_level]);
-  log_levels_string += "\n[trace] and [debug] are only available on debug builds";
 
   const std::string log_format_string =
       fmt::format("Log message format in spdlog syntax "

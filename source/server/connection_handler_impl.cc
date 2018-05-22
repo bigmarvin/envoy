@@ -8,6 +8,8 @@
 #include "common/network/connection_impl.h"
 #include "common/network/utility.h"
 
+#include "extensions/transport_sockets/well_known_names.h"
+
 namespace Envoy {
 namespace Server {
 
@@ -148,6 +150,11 @@ void ConnectionHandlerImpl::ActiveSocket::continueFilterChain(bool success) {
       // prevent further redirection.
       new_listener->onAccept(std::move(socket_), false);
     } else {
+      // Set default transport protocol if none of the listener filters did it.
+      if (socket_->detectedTransportProtocol().empty()) {
+        socket_->setDetectedTransportProtocol(
+            Extensions::TransportSockets::TransportSocketNames::get().RAW_BUFFER);
+      }
       // Create a new connection on this listener.
       listener_.newConnection(std::move(socket_));
     }
@@ -178,30 +185,42 @@ void ConnectionHandlerImpl::ActiveListener::onAccept(
 }
 
 void ConnectionHandlerImpl::ActiveListener::newConnection(Network::ConnectionSocketPtr&& socket) {
-  Network::ConnectionPtr new_connection = parent_.dispatcher_.createServerConnection(
-      std::move(socket), config_.transportSocketFactory().createTransportSocket());
+  // Find matching filter chain.
+  const auto filter_chain = config_.filterChainManager().findFilterChain(*socket);
+  if (filter_chain == nullptr) {
+    ENVOY_LOG_TO_LOGGER(parent_.logger_, debug,
+                        "closing connection: no matching filter chain found");
+    stats_.no_filter_chain_match_.inc();
+    socket->close();
+    return;
+  }
+
+  auto transport_socket = filter_chain->transportSocketFactory().createTransportSocket();
+  Network::ConnectionPtr new_connection =
+      parent_.dispatcher_.createServerConnection(std::move(socket), std::move(transport_socket));
   new_connection->setBufferLimits(config_.perConnectionBufferLimitBytes());
+
+  const bool empty_filter_chain = !config_.filterChainFactory().createNetworkFilterChain(
+      *new_connection, filter_chain->networkFilterFactories());
+  if (empty_filter_chain) {
+    ENVOY_CONN_LOG_TO_LOGGER(parent_.logger_, debug, "closing connection: no filters",
+                             *new_connection);
+    new_connection->close(Network::ConnectionCloseType::NoFlush);
+    return;
+  }
+
   onNewConnection(std::move(new_connection));
 }
 
 void ConnectionHandlerImpl::ActiveListener::onNewConnection(
     Network::ConnectionPtr&& new_connection) {
   ENVOY_CONN_LOG_TO_LOGGER(parent_.logger_, debug, "new connection", *new_connection);
-  bool empty_filter_chain = !config_.filterChainFactory().createNetworkFilterChain(*new_connection);
 
   // If the connection is already closed, we can just let this connection immediately die.
   if (new_connection->state() != Network::Connection::State::Closed) {
-    // Close the connection if the filter chain is empty to avoid leaving open connections
-    // with nothing to do.
-    if (empty_filter_chain) {
-      ENVOY_CONN_LOG_TO_LOGGER(parent_.logger_, debug, "closing connection: no filters",
-                               *new_connection);
-      new_connection->close(Network::ConnectionCloseType::NoFlush);
-    } else {
-      ActiveConnectionPtr active_connection(new ActiveConnection(*this, std::move(new_connection)));
-      active_connection->moveIntoList(std::move(active_connection), connections_);
-      parent_.num_connections_++;
-    }
+    ActiveConnectionPtr active_connection(new ActiveConnection(*this, std::move(new_connection)));
+    active_connection->moveIntoList(std::move(active_connection), connections_);
+    parent_.num_connections_++;
   }
 }
 

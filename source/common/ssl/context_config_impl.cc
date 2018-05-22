@@ -15,21 +15,15 @@ namespace Ssl {
 const std::string ContextConfigImpl::DEFAULT_CIPHER_SUITES =
     "[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]:"
     "[ECDHE-RSA-AES128-GCM-SHA256|ECDHE-RSA-CHACHA20-POLY1305]:"
-    "ECDHE-ECDSA-AES128-SHA256:"
-    "ECDHE-RSA-AES128-SHA256:"
     "ECDHE-ECDSA-AES128-SHA:"
     "ECDHE-RSA-AES128-SHA:"
     "AES128-GCM-SHA256:"
-    "AES128-SHA256:"
     "AES128-SHA:"
     "ECDHE-ECDSA-AES256-GCM-SHA384:"
     "ECDHE-RSA-AES256-GCM-SHA384:"
-    "ECDHE-ECDSA-AES256-SHA384:"
-    "ECDHE-RSA-AES256-SHA384:"
     "ECDHE-ECDSA-AES256-SHA:"
     "ECDHE-RSA-AES256-SHA:"
     "AES256-GCM-SHA384:"
-    "AES256-SHA256:"
     "AES256-SHA";
 
 const std::string ContextConfigImpl::DEFAULT_ECDH_CURVES = "X25519:P-256";
@@ -73,7 +67,9 @@ ContextConfigImpl::ContextConfigImpl(const envoy::api::v2::auth::CommonTlsContex
       max_protocol_version_(
           tlsVersionFromProto(config.tls_params().tls_maximum_protocol_version(), TLS1_2_VERSION)) {
   // TODO(htuch): Support multiple hashes.
-  ASSERT(config.validation_context().verify_certificate_hash().size() <= 1);
+  if (config.validation_context().verify_certificate_hash().size() > 1) {
+    throw EnvoyException("Multiple TLS certificate verification hashes are not supported");
+  }
   if (ca_cert_.empty() && !certificate_revocation_list_.empty()) {
     throw EnvoyException(fmt::format("Failed to load CRL from {} without trusted CA certificates",
                                      certificateRevocationListPath()));
@@ -103,8 +99,15 @@ unsigned ContextConfigImpl::tlsVersionFromProto(
 ClientContextConfigImpl::ClientContextConfigImpl(
     const envoy::api::v2::auth::UpstreamTlsContext& config)
     : ContextConfigImpl(config.common_tls_context()), server_name_indication_(config.sni()) {
+  // BoringSSL treats this as a C string, so embedded NULL characters will not
+  // be handled correctly.
+  if (server_name_indication_.find('\0') != std::string::npos) {
+    throw EnvoyException("SNI names containing NULL-byte are not allowed");
+  }
   // TODO(PiotrSikora): Support multiple TLS certificates.
-  ASSERT(config.common_tls_context().tls_certificates().size() <= 1);
+  if (config.common_tls_context().tls_certificates().size() > 1) {
+    throw EnvoyException("Multiple TLS certificates are not supported for client contexts");
+  }
 }
 
 ClientContextConfigImpl::ClientContextConfigImpl(const Json::Object& config)
@@ -129,7 +132,7 @@ ServerContextConfigImpl::ServerContextConfigImpl(
           }
           break;
         case envoy::api::v2::auth::DownstreamTlsContext::kSessionTicketKeysSdsSecretConfig:
-          NOT_IMPLEMENTED;
+          throw EnvoyException("SDS not supported yet");
           break;
         case envoy::api::v2::auth::DownstreamTlsContext::SESSION_TICKET_KEYS_TYPE_NOT_SET:
           break;
@@ -141,9 +144,9 @@ ServerContextConfigImpl::ServerContextConfigImpl(
         return ret;
       }()) {
   // TODO(PiotrSikora): Support multiple TLS certificates.
-  // TODO(mattklein123): All of the ASSERTs in this file need to be converted to exceptions with
-  //                     proper error handling.
-  ASSERT(config.common_tls_context().tls_certificates().size() == 1);
+  if (config.common_tls_context().tls_certificates().size() != 1) {
+    throw EnvoyException("A single TLS certificate is required for server contexts");
+  }
 }
 
 ServerContextConfigImpl::ServerContextConfigImpl(const Json::Object& config)

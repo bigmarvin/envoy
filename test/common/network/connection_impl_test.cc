@@ -41,6 +41,13 @@ using testing::_;
 namespace Envoy {
 namespace Network {
 
+TEST(RawBufferSocket, TestBasics) {
+  TransportSocketPtr raw_buffer_socket(Network::Test::createRawBufferSocket());
+  EXPECT_FALSE(raw_buffer_socket->ssl());
+  EXPECT_TRUE(raw_buffer_socket->canFlushClose());
+  EXPECT_EQ("", raw_buffer_socket->protocol());
+}
+
 TEST(ConnectionImplUtility, updateBufferStats) {
   StrictMock<Stats::MockCounter> counter;
   StrictMock<Stats::MockGauge> gauge;
@@ -71,10 +78,10 @@ INSTANTIATE_TEST_CASE_P(IpVersions, ConnectionImplDeathTest,
 
 TEST_P(ConnectionImplDeathTest, BadFd) {
   Event::DispatcherImpl dispatcher;
-  EXPECT_DEATH(ConnectionImpl(dispatcher,
-                              std::make_unique<ConnectionSocketImpl>(-1, nullptr, nullptr),
-                              Network::Test::createRawBufferSocket(), false),
-               ".*assert failure: fd\\(\\) != -1.*");
+  EXPECT_DEATH_LOG_TO_STDERR(
+      ConnectionImpl(dispatcher, std::make_unique<ConnectionSocketImpl>(-1, nullptr, nullptr),
+                     Network::Test::createRawBufferSocket(), false),
+      ".*assert failure: fd\\(\\) != -1.*");
 }
 
 class ConnectionImplTest : public testing::TestWithParam<Address::IpVersion> {
@@ -178,6 +185,15 @@ protected:
 INSTANTIATE_TEST_CASE_P(IpVersions, ConnectionImplTest,
                         testing::ValuesIn(TestEnvironment::getIpVersionsForTest()),
                         TestUtility::ipTestParamsToString);
+
+TEST_P(ConnectionImplTest, UniqueId) {
+  setUpBasicConnection();
+  disconnect(false);
+  uint64_t first_id = client_connection_->id();
+  setUpBasicConnection();
+  EXPECT_NE(first_id, client_connection_->id());
+  disconnect(false);
+}
 
 TEST_P(ConnectionImplTest, CloseDuringConnectCallback) {
   setUpBasicConnection();
@@ -603,6 +619,8 @@ TEST_P(ConnectionImplTest, BasicWrite) {
                             Invoke(client_write_buffer_, &MockWatermarkBuffer::baseMove)));
   EXPECT_CALL(*client_write_buffer_, write(_))
       .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackWrites));
+  EXPECT_CALL(*client_write_buffer_, drain(_))
+      .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackDrains));
   client_connection_->write(buffer_to_write, false);
   dispatcher_->run(Event::Dispatcher::RunType::NonBlock);
   EXPECT_EQ(data_to_write, data_written);
@@ -628,6 +646,8 @@ TEST_P(ConnectionImplTest, WriteWithWatermarks) {
                             Invoke(client_write_buffer_, &MockWatermarkBuffer::baseMove)));
   EXPECT_CALL(*client_write_buffer_, write(_))
       .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackWrites));
+  EXPECT_CALL(*client_write_buffer_, drain(_))
+      .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackDrains));
   // The write() call on the connection will buffer enough data to bring the connection above the
   // high watermark but the subsequent drain immediately brings it back below.
   // A nice future performance optimization would be to latch if the socket is writable in the
@@ -660,6 +680,8 @@ TEST_P(ConnectionImplTest, WriteWithWatermarks) {
   // call to write() will succeed, bringing the connection back under the low watermark.
   EXPECT_CALL(*client_write_buffer_, write(_))
       .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackWrites));
+  EXPECT_CALL(*client_write_buffer_, drain(_))
+      .WillOnce(Invoke(client_write_buffer_, &MockWatermarkBuffer::trackDrains));
   EXPECT_CALL(client_callbacks_, onBelowWriteBufferLowWatermark()).Times(1);
 
   disconnect(true);

@@ -9,6 +9,7 @@
 #include "envoy/server/configuration.h"
 #include "envoy/server/drain_manager.h"
 #include "envoy/server/filter_config.h"
+#include "envoy/server/health_checker_config.h"
 #include "envoy/server/instance.h"
 #include "envoy/server/options.h"
 #include "envoy/server/transport_socket_config.h"
@@ -45,27 +46,27 @@ public:
   MockOptions(const std::string& config_path);
   ~MockOptions();
 
-  MOCK_METHOD0(baseId, uint64_t());
-  MOCK_METHOD0(concurrency, uint32_t());
-  MOCK_METHOD0(configPath, const std::string&());
-  MOCK_METHOD0(configYaml, const std::string&());
-  MOCK_METHOD0(v2ConfigOnly, bool());
-  MOCK_METHOD0(adminAddressPath, const std::string&());
-  MOCK_METHOD0(localAddressIpVersion, Network::Address::IpVersion());
-  MOCK_METHOD0(drainTime, std::chrono::seconds());
-  MOCK_METHOD0(logLevel, spdlog::level::level_enum());
-  MOCK_METHOD0(logFormat, const std::string&());
-  MOCK_METHOD0(logPath, const std::string&());
-  MOCK_METHOD0(parentShutdownTime, std::chrono::seconds());
-  MOCK_METHOD0(restartEpoch, uint64_t());
-  MOCK_METHOD0(fileFlushIntervalMsec, std::chrono::milliseconds());
+  MOCK_CONST_METHOD0(baseId, uint64_t());
+  MOCK_CONST_METHOD0(concurrency, uint32_t());
+  MOCK_CONST_METHOD0(configPath, const std::string&());
+  MOCK_CONST_METHOD0(configYaml, const std::string&());
+  MOCK_CONST_METHOD0(v2ConfigOnly, bool());
+  MOCK_CONST_METHOD0(adminAddressPath, const std::string&());
+  MOCK_CONST_METHOD0(localAddressIpVersion, Network::Address::IpVersion());
+  MOCK_CONST_METHOD0(drainTime, std::chrono::seconds());
+  MOCK_CONST_METHOD0(logLevel, spdlog::level::level_enum());
+  MOCK_CONST_METHOD0(logFormat, const std::string&());
+  MOCK_CONST_METHOD0(logPath, const std::string&());
+  MOCK_CONST_METHOD0(parentShutdownTime, std::chrono::seconds());
+  MOCK_CONST_METHOD0(restartEpoch, uint64_t());
+  MOCK_CONST_METHOD0(fileFlushIntervalMsec, std::chrono::milliseconds());
   MOCK_CONST_METHOD0(mode, Mode());
-  MOCK_METHOD0(serviceClusterName, const std::string&());
-  MOCK_METHOD0(serviceNodeName, const std::string&());
-  MOCK_METHOD0(serviceZone, const std::string&());
-  MOCK_METHOD0(maxStats, uint64_t());
-  MOCK_METHOD0(maxObjNameLength, uint64_t());
-  MOCK_METHOD0(hotRestartDisabled, bool());
+  MOCK_CONST_METHOD0(serviceClusterName, const std::string&());
+  MOCK_CONST_METHOD0(serviceNodeName, const std::string&());
+  MOCK_CONST_METHOD0(serviceZone, const std::string&());
+  MOCK_CONST_METHOD0(maxStats, uint64_t());
+  MOCK_CONST_METHOD0(maxObjNameLength, uint64_t());
+  MOCK_CONST_METHOD0(hotRestartDisabled, bool());
 
   std::string config_path_;
   std::string config_yaml_;
@@ -80,12 +81,20 @@ public:
 
 class MockConfigTracker : public ConfigTracker {
 public:
-  MOCK_CONST_METHOD0(getCallbacksMap, const CbsMap&());
-  MOCK_METHOD2(addReturnsRaw, EntryOwner*(std::string, Cb));
-  EntryOwnerPtr add(const std::string& key, Cb callback) override {
-    return EntryOwnerPtr{addReturnsRaw(key, std::move(callback))};
-  }
+  MockConfigTracker();
+  ~MockConfigTracker();
+
   struct MockEntryOwner : public EntryOwner {};
+
+  MOCK_METHOD2(add_, EntryOwner*(std::string, Cb));
+
+  // Server::ConfigTracker
+  MOCK_CONST_METHOD0(getCallbacksMap, const CbsMap&());
+  EntryOwnerPtr add(const std::string& key, Cb callback) override {
+    return EntryOwnerPtr{add_(key, std::move(callback))};
+  }
+
+  std::unordered_map<std::string, Cb> config_tracker_callbacks_;
 };
 
 class MockAdmin : public Admin {
@@ -100,7 +109,7 @@ public:
   MOCK_METHOD0(socket, Network::Socket&());
   MOCK_METHOD0(getConfigTracker, ConfigTracker&());
 
-  NiceMock<MockConfigTracker> config_tracker;
+  NiceMock<MockConfigTracker> config_tracker_;
 };
 
 class MockDrainManager : public DrainManager {
@@ -172,13 +181,17 @@ public:
   DrainManagerPtr createDrainManager(envoy::api::v2::Listener::DrainType drain_type) override {
     return DrainManagerPtr{createDrainManager_(drain_type)};
   }
+  LdsApiPtr createLdsApi(const envoy::api::v2::core::ConfigSource& lds_config) override {
+    return LdsApiPtr{createLdsApi_(lds_config)};
+  }
 
+  MOCK_METHOD1(createLdsApi_, LdsApi*(const envoy::api::v2::core::ConfigSource& lds_config));
   MOCK_METHOD2(createNetworkFilterFactoryList,
-               std::vector<Configuration::NetworkFilterFactoryCb>(
+               std::vector<Network::FilterFactoryCb>(
                    const Protobuf::RepeatedPtrField<envoy::api::v2::listener::Filter>& filters,
                    Configuration::FactoryContext& context));
   MOCK_METHOD2(createListenerFilterFactoryList,
-               std::vector<Configuration::ListenerFilterFactoryCb>(
+               std::vector<Network::ListenerFilterFactoryCb>(
                    const Protobuf::RepeatedPtrField<envoy::api::v2::listener::ListenerFilter>&,
                    Configuration::ListenerFactoryContext& context));
   MOCK_METHOD3(createListenSocket,
@@ -196,7 +209,9 @@ public:
   MockListenerManager();
   ~MockListenerManager();
 
-  MOCK_METHOD2(addOrUpdateListener, bool(const envoy::api::v2::Listener& config, bool modifiable));
+  MOCK_METHOD3(addOrUpdateListener, bool(const envoy::api::v2::Listener& config,
+                                         const std::string& version_info, bool modifiable));
+  MOCK_METHOD1(createLdsApi, void(const envoy::api::v2::core::ConfigSource& lds_config));
   MOCK_METHOD0(listeners, std::vector<std::reference_wrapper<Network::ListenerConfig>>());
   MOCK_METHOD0(numConnections, uint64_t());
   MOCK_METHOD1(removeListener, bool(const std::string& listener_name));
@@ -286,6 +301,7 @@ public:
   MOCK_METHOD0(httpTracer, Tracing::HttpTracer&());
   MOCK_METHOD0(threadLocal, ThreadLocal::Instance&());
   MOCK_METHOD0(localInfo, const LocalInfo::LocalInfo&());
+  MOCK_CONST_METHOD0(statsFlushInterval, std::chrono::milliseconds());
 
   testing::NiceMock<ThreadLocal::MockInstance> thread_local_;
   Stats::IsolatedStoreImpl stats_store_;
@@ -317,11 +333,11 @@ public:
   MockMain() : MockMain(0, 0, 0, 0) {}
   MockMain(int wd_miss, int wd_megamiss, int wd_kill, int wd_multikill);
 
-  MOCK_METHOD0(clusterManager, Upstream::ClusterManager&());
+  MOCK_METHOD0(clusterManager, Upstream::ClusterManager*());
   MOCK_METHOD0(httpTracer, Tracing::HttpTracer&());
   MOCK_METHOD0(rateLimitClientFactory, RateLimit::ClientFactory&());
   MOCK_METHOD0(statsSinks, std::list<Stats::SinkPtr>&());
-  MOCK_METHOD0(statsFlushInterval, std::chrono::milliseconds());
+  MOCK_CONST_METHOD0(statsFlushInterval, std::chrono::milliseconds());
   MOCK_CONST_METHOD0(wdMissTimeout, std::chrono::milliseconds());
   MOCK_CONST_METHOD0(wdMegaMissTimeout, std::chrono::milliseconds());
   MOCK_CONST_METHOD0(wdKillTimeout, std::chrono::milliseconds());
@@ -395,6 +411,26 @@ public:
     addListenSocketOption_(option);
   }
   MOCK_METHOD1(addListenSocketOption_, void(const Network::Socket::OptionConstSharedPtr&));
+  void addListenSocketOptions(const Network::Socket::OptionsSharedPtr& options) override {
+    addListenSocketOptions_(options);
+  }
+  MOCK_METHOD1(addListenSocketOptions_, void(const Network::Socket::OptionsSharedPtr&));
+};
+
+class MockHealthCheckerFactoryContext : public virtual HealthCheckerFactoryContext {
+public:
+  MockHealthCheckerFactoryContext();
+  ~MockHealthCheckerFactoryContext();
+
+  MOCK_METHOD0(cluster, Upstream::Cluster&());
+  MOCK_METHOD0(dispatcher, Event::Dispatcher&());
+  MOCK_METHOD0(random, Envoy::Runtime::RandomGenerator&());
+  MOCK_METHOD0(runtime, Envoy::Runtime::Loader&());
+
+  testing::NiceMock<Upstream::MockCluster> cluster_;
+  testing::NiceMock<Event::MockDispatcher> dispatcher_;
+  testing::NiceMock<Envoy::Runtime::MockRandomGenerator> random_;
+  testing::NiceMock<Envoy::Runtime::MockLoader> runtime_;
 };
 
 } // namespace Configuration

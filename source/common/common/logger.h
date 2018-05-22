@@ -5,14 +5,14 @@
 #include <string>
 #include <vector>
 
-#include "envoy/access_log/access_log.h"
-#include "envoy/filesystem/filesystem.h"
 #include "envoy/thread/thread.h"
 
 #include "common/common/fmt.h"
 #include "common/common/macros.h"
+#include "common/common/non_copyable.h"
 
 #include "absl/strings/string_view.h"
+#include "fmt/ostream.h"
 #include "spdlog/spdlog.h"
 
 namespace Envoy {
@@ -30,6 +30,7 @@ namespace Logger {
   FUNCTION(file)                 \
   FUNCTION(filter)               \
   FUNCTION(hc)                   \
+  FUNCTION(health_checker)       \
   FUNCTION(http)                 \
   FUNCTION(http2)                \
   FUNCTION(lua)                  \
@@ -42,7 +43,9 @@ namespace Logger {
   FUNCTION(testing)              \
   FUNCTION(tracing)              \
   FUNCTION(upstream)             \
-  FUNCTION(grpc)
+  FUNCTION(grpc)                 \
+  FUNCTION(stats)
+
 
 enum class Id {
   ALL_LOGGER_IDS(GENERATE_ENUM)
@@ -92,7 +95,7 @@ typedef std::shared_ptr<DelegatingLogSink> DelegatingLogSinkPtr;
  * On destruction, logging is reverted to its previous state. SinkDelegates must
  * be allocated/freed as a stack.
  */
-class SinkDelegate {
+class SinkDelegate : NonCopyable {
 public:
   explicit SinkDelegate(DelegatingLogSinkPtr log_sink);
   virtual ~SinkDelegate();
@@ -106,22 +109,6 @@ protected:
 private:
   SinkDelegate* previous_delegate_;
   DelegatingLogSinkPtr log_sink_;
-};
-
-/**
- * SinkDelegate that writes log messages to a file.
- */
-class FileSinkDelegate : public SinkDelegate {
-public:
-  FileSinkDelegate(const std::string& log_path, AccessLog::AccessLogManager& log_manager,
-                   DelegatingLogSinkPtr log_sink);
-
-  // SinkDelegate
-  void log(absl::string_view msg) override;
-  void flush() override;
-
-private:
-  Filesystem::FileSharedPtr log_file_;
 };
 
 /**

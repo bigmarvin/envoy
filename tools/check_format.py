@@ -13,8 +13,8 @@ import traceback
 
 EXCLUDED_PREFIXES = ("./generated/", "./thirdparty/", "./build", "./.git/",
                      "./bazel-", "./bazel/external", "./.cache")
-SUFFIXES = (".cc", ".h", "BUILD", ".md", ".rst")
-DOCS_SUFFIX = (".md", ".rst")
+SUFFIXES = (".cc", ".h", "BUILD", ".md", ".rst", ".proto")
+DOCS_SUFFIX = (".md", ".rst", ".proto")
 
 # Files in these paths can make reference to protobuf stuff directly
 GOOGLE_PROTOBUF_WHITELIST = ('ci/prebuilt', 'source/common/protobuf', 'api/test')
@@ -94,7 +94,7 @@ def checkProtobufExternalDeps(file_path):
 
 
 def isApiFile(file_path):
-  return file_path.startswith('./api/')
+  return file_path.startswith(args.api_prefix)
 
 
 def isBuildFile(file_path):
@@ -291,6 +291,7 @@ if __name__ == "__main__":
   parser.add_argument('--add-excluded-prefixes', type=str, nargs="+", help="exclude additional prefixes.")
   parser.add_argument('-j', '--num-workers', type=int, default=multiprocessing.cpu_count(),
                       help="number of worker processes to use; defaults to one per core.")
+  parser.add_argument('--api-prefix', type=str, default='./api/', help="path of the API tree")
   args = parser.parse_args()
 
   operation_type = args.operation_type

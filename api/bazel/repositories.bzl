@@ -1,9 +1,9 @@
 GOOGLEAPIS_SHA = "5c6df0cd18c6a429eab739fb711c27f6e1393366" # May 14, 2017
-GOGOPROTO_SHA = "342cbe0a04158f6dcb03ca0079991a51a4248c02" # Oct 7, 2017
+GOGOPROTO_SHA = "1adfc126b41513cc696b209667c8656ea7aac67c" # Feb 2, 2018
 PROMETHEUS_SHA = "6f3806018612930941127f2a7c6c453ba2c527d2" # Nov 02, 2017
 OPENCENSUS_SHA = "993c711ba22a5f08c1d4de58a3c07466995ed962" # Dec 13, 2017
 
-PGV_GIT_SHA = "3204975f8145b7d187081b7034060012ae838d17"
+PGV_GIT_SHA = "9f600c2cd2d7031fdc8e25e1c9f5ad81c8cab4fe"
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
@@ -194,12 +194,20 @@ py_proto_library(
         url = "https://github.com/prometheus/client_model/archive/" + PROMETHEUS_SHA + ".tar.gz",
         build_file_content = """
 load("@envoy_api//bazel:api_build_system.bzl", "api_proto_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 api_proto_library(
     name = "client_model",
     srcs = [
         "metrics.proto",
     ],
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "client_model_go_proto",
+    importpath = "client_model",
+    proto = ":client_model",
     visibility = ["//visibility:public"],
 )
         """,
@@ -211,6 +219,7 @@ api_proto_library(
         url = "https://github.com/census-instrumentation/opencensus-proto/archive/" + OPENCENSUS_SHA + ".tar.gz",
         build_file_content = """
 load("@envoy_api//bazel:api_build_system.bzl", "api_proto_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 api_proto_library(
     name = "trace_model",
@@ -219,7 +228,12 @@ api_proto_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+go_proto_library(
+    name = "trace_model_go_proto",
+    importpath = "trace_model",
+    proto = ":trace_model",
+    visibility = ["//visibility:public"],
+)
         """,
     )
-
-

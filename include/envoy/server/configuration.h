@@ -49,9 +49,10 @@ public:
   virtual ~Main() {}
 
   /**
-   * @return Upstream::ClusterManager& singleton for use by the entire server.
+   * @return Upstream::ClusterManager* singleton for use by the entire server.
+   *         This will be nullptr if the cluster manager has not initialized yet.
    */
-  virtual Upstream::ClusterManager& clusterManager() PURE;
+  virtual Upstream::ClusterManager* clusterManager() PURE;
 
   /**
    * @return Tracing::HttpTracer& singleton for use by the entire server.
@@ -72,7 +73,7 @@ public:
    * @return std::chrono::milliseconds the time interval between flushing to configured stat sinks.
    *         The server latches counters.
    */
-  virtual std::chrono::milliseconds statsFlushInterval() PURE;
+  virtual std::chrono::milliseconds statsFlushInterval() const PURE;
 
   /**
    * @return std::chrono::milliseconds the time interval after which we count a nonresponsive thread

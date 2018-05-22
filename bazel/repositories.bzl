@@ -226,11 +226,13 @@ def envoy_dependencies(path = "@envoy_deps//", skip_targets = []):
     _boringssl()
     _com_google_absl()
     _com_github_bombela_backward()
+    _com_github_circonus_labs_libcircllhist()
     _com_github_cyan4973_xxhash()
     _com_github_eile_tclap()
     _com_github_fmtlib_fmt()
     _com_github_gabime_spdlog()
     _com_github_gcovr_gcovr()
+    _com_github_google_libprotobuf_mutator()
     _io_opentracing_cpp()
     _com_lightstep_tracer_cpp()
     _com_github_grpc_grpc()
@@ -262,6 +264,16 @@ def _com_github_bombela_backward():
     native.bind(
         name = "backward",
         actual = "@com_github_bombela_backward//:backward",
+    )
+
+def _com_github_circonus_labs_libcircllhist():
+    _repository_impl(
+        name = "com_github_circonus_labs_libcircllhist",
+        build_file = "@envoy//bazel/external:libcircllhist.BUILD",
+    )
+    native.bind(
+        name = "libcircllhist",
+        actual = "@com_github_circonus_labs_libcircllhist//:libcircllhist",
     )
 
 def _com_github_cyan4973_xxhash():
@@ -314,6 +326,16 @@ def _com_github_gcovr_gcovr():
         actual = "@com_github_gcovr_gcovr//:gcovr",
     )
 
+def _com_github_google_libprotobuf_mutator():
+    _repository_impl(
+        name = "com_github_google_libprotobuf_mutator",
+        build_file = "@envoy//bazel/external:libprotobuf_mutator.BUILD",
+    )
+    native.bind(
+        name = "libprotobuf_mutator",
+        actual = "@com_github_google_libprotobuf_mutator//:libprotobuf_mutator",
+    )
+
 def _io_opentracing_cpp():
     _repository_impl("io_opentracing_cpp")
     native.bind(
@@ -359,6 +381,10 @@ def _com_google_googletest():
         actual = "@com_google_googletest//:gtest",
     )
 
+# TODO(jmarantz): replace the use of bind and external_deps with just
+# the direct Bazel path at all sites.  This will make it easier to
+# pull in more bits of abseil as needed, and is now the preferred
+# method for pure Bazel deps.
 def _com_google_absl():
     _repository_impl("com_google_absl")
     native.bind(
@@ -376,6 +402,10 @@ def _com_google_absl():
     native.bind(
         name = "abseil_optional",
         actual = "@com_google_absl//absl/types:optional",
+    )
+    native.bind(
+        name = "abseil_synchronization",
+        actual = "@com_google_absl//absl/synchronization:synchronization",
     )
 
 def _com_google_protobuf():

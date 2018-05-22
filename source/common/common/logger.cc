@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "envoy/thread/thread.h"
+#include "common/common/lock_guard.h"
 
 #include "spdlog/spdlog.h"
 
@@ -36,32 +36,15 @@ SinkDelegate::~SinkDelegate() {
   log_sink_->setDelegate(previous_delegate_);
 }
 
-FileSinkDelegate::FileSinkDelegate(const std::string& log_path,
-                                   AccessLog::AccessLogManager& log_manager,
-                                   DelegatingLogSinkPtr log_sink)
-    : SinkDelegate(log_sink), log_file_(log_manager.createAccessLog(log_path)) {}
-
-void FileSinkDelegate::log(absl::string_view msg) {
-  // Logfiles have internal locking to ensure serial, non-interleaved
-  // writes, so no additional locking needed here.
-  log_file_->write(msg);
-}
-
-void FileSinkDelegate::flush() {
-  // Logfiles have internal locking to ensure serial, non-interleaved
-  // writes, so no additional locking needed here.
-  log_file_->flush();
-}
-
 StderrSinkDelegate::StderrSinkDelegate(DelegatingLogSinkPtr log_sink) : SinkDelegate(log_sink) {}
 
 void StderrSinkDelegate::log(absl::string_view msg) {
-  Thread::OptionalLockGuard<Thread::BasicLockable> guard(lock_);
+  Thread::OptionalLockGuard guard(lock_);
   std::cerr << msg;
 }
 
 void StderrSinkDelegate::flush() {
-  Thread::OptionalLockGuard<Thread::BasicLockable> guard(lock_);
+  Thread::OptionalLockGuard guard(lock_);
   std::cerr << std::flush;
 }
 

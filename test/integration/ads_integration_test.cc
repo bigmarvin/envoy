@@ -84,9 +84,8 @@ public:
     Ssl::ServerContextConfigImpl cfg(tls_context);
 
     static Stats::Scope* upstream_stats_store = new Stats::TestIsolatedStoreImpl();
-    return std::make_unique<Ssl::ServerSslSocketFactory>(cfg, EMPTY_STRING,
-                                                         std::vector<std::string>{}, true,
-                                                         context_manager_, *upstream_stats_store);
+    return std::make_unique<Ssl::ServerSslSocketFactory>(
+        cfg, context_manager_, *upstream_stats_store, std::vector<std::string>{});
   }
 
   AssertionResult
@@ -226,7 +225,7 @@ public:
       validation_context->add_verify_subject_alt_name("foo.lyft.com");
       if (clientType() == Grpc::ClientType::GoogleGrpc) {
         auto* google_grpc = grpc_service->mutable_google_grpc();
-        auto* ssl_creds = google_grpc->mutable_ssl_credentials();
+        auto* ssl_creds = google_grpc->mutable_channel_credentials()->mutable_ssl_credentials();
         ssl_creds->mutable_root_certs()->set_filename(
             TestEnvironment::runfilesPath("test/config/integration/certs/upstreamcacert.pem"));
       }

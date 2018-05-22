@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "envoy/network/connection.h"
 #include "envoy/network/transport_socket.h"
 
 #include "common/common/logger.h"
@@ -29,6 +30,8 @@ public:
   std::string subjectLocalCertificate() const override;
   std::string uriSanPeerCertificate() override;
   const std::string& urlEncodedPemEncodedPeerCertificate() const override;
+  std::vector<std::string> dnsSansPeerCertificate() override;
+  std::vector<std::string> dnsSansLocalCertificate() override;
 
   // Network::TransportSocket
   void setTransportSocketCallbacks(Network::TransportSocketCallbacks& callbacks) override;
@@ -49,6 +52,7 @@ private:
   void shutdownSsl();
   std::string getUriSanFromCertificate(X509* cert);
   std::string getSubjectFromCertificate(X509* cert) const;
+  std::vector<std::string> getDnsSansFromCertificate(X509* cert);
 
   Network::TransportSocketCallbacks* callbacks_{};
   ContextImpl& ctx_;
@@ -73,9 +77,8 @@ private:
 
 class ServerSslSocketFactory : public Network::TransportSocketFactory {
 public:
-  ServerSslSocketFactory(const ServerContextConfig& config, const std::string& listener_name,
-                         const std::vector<std::string>& server_names, bool skip_context_update,
-                         Ssl::ContextManager& manager, Stats::Scope& stats_scope);
+  ServerSslSocketFactory(const ServerContextConfig& config, Ssl::ContextManager& manager,
+                         Stats::Scope& stats_scope, const std::vector<std::string>& server_names);
   Network::TransportSocketPtr createTransportSocket() const override;
   bool implementsSecureTransport() const override;
 

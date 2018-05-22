@@ -61,8 +61,8 @@ message HealthCheck {
 
   message HttpHealthCheck {
     // The value of the host header in the HTTP health check request. If
-    // left empty (default value), the IP on behalf of which this health check is performed will be
-    // used.
+    // left empty (default value), the name of the cluster this health check is associated
+    // with will be used.
     string host = 1;
 
     // Specifies the HTTP path that will be requested during health checking. For example
@@ -116,9 +116,9 @@ message HealthCheck {
     string service_name = 1;
   }
 
-  // [#not-implemented-hide:] Custom health check.
+  // Custom health check.
   message CustomHealthCheck {
-    // The registered name of the custom health check.
+    // The registered name of the custom health checker.
     string name = 1 [(validate.rules).string.min_bytes = 1];
 
     // A custom health checker specific configuration which depends on the custom health checker
@@ -141,7 +141,7 @@ message HealthCheck {
     // gRPC health check.
     GrpcHealthCheck grpc_health_check = 11;
 
-    // [#not-implemented-hide:] Custom health check.
+    // Custom health check.
     CustomHealthCheck custom_health_check = 13;
   }
 

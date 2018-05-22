@@ -8,6 +8,7 @@
 
 #ifdef ENVOY_HANDLE_SIGNALS
 #include "exe/signal_action.h"
+#include "exe/terminate_handler.h"
 #endif
 
 namespace Envoy {
@@ -39,7 +40,7 @@ protected:
 
 class MainCommon {
 public:
-  MainCommon(int argc, char** argv);
+  MainCommon(int argc, const char* const* argv);
   bool run() { return base_.run(); }
 
   static std::string hotRestartVersion(uint64_t max_num_stats, uint64_t max_stat_name_len,
@@ -48,6 +49,7 @@ public:
 private:
 #ifdef ENVOY_HANDLE_SIGNALS
   Envoy::SignalAction handle_sigs;
+  Envoy::TerminateHandler log_on_terminate;
 #endif
 
   Envoy::OptionsImpl options_;

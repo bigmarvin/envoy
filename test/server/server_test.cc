@@ -14,7 +14,9 @@
 
 using testing::HasSubstr;
 using testing::InSequence;
+using testing::Invoke;
 using testing::Property;
+using testing::Ref;
 using testing::SaveArg;
 using testing::StrictMock;
 using testing::_;
@@ -26,17 +28,23 @@ TEST(ServerInstanceUtil, flushHelper) {
   InSequence s;
 
   Stats::IsolatedStoreImpl store;
+  Stats::SourceImpl source(store);
   store.counter("hello").inc();
   store.gauge("world").set(5);
   std::unique_ptr<Stats::MockSink> sink(new StrictMock<Stats::MockSink>());
-  EXPECT_CALL(*sink, beginFlush());
-  EXPECT_CALL(*sink, flushCounter(Property(&Stats::Metric::name, "hello"), 1));
-  EXPECT_CALL(*sink, flushGauge(Property(&Stats::Metric::name, "world"), 5));
-  EXPECT_CALL(*sink, endFlush());
+  EXPECT_CALL(*sink, flush(Ref(source))).WillOnce(Invoke([](Stats::Source& source) {
+    ASSERT_EQ(source.cachedCounters().size(), 1);
+    EXPECT_EQ(source.cachedCounters().front()->name(), "hello");
+    EXPECT_EQ(source.cachedCounters().front()->latch(), 1);
+
+    ASSERT_EQ(source.cachedGauges().size(), 1);
+    EXPECT_EQ(source.cachedGauges().front()->name(), "world");
+    EXPECT_EQ(source.cachedGauges().front()->value(), 5);
+  }));
 
   std::list<Stats::SinkPtr> sinks;
   sinks.emplace_back(std::move(sink));
-  InstanceUtil::flushCountersAndGaugesToSinks(sinks, store);
+  InstanceUtil::flushMetricsToSinks(sinks, source);
 }
 
 class RunHelperTest : public testing::Test {
@@ -103,7 +111,8 @@ protected:
     server_.reset(new InstanceImpl(
         options_,
         Network::Address::InstanceConstSharedPtr(new Network::Address::Ipv4Instance("127.0.0.1")),
-        hooks_, restart_, stats_store_, fakelock_, component_factory_, thread_local_));
+        hooks_, restart_, stats_store_, fakelock_, component_factory_,
+        std::make_unique<NiceMock<Runtime::MockRandomGenerator>>(), thread_local_));
 
     EXPECT_TRUE(server_->api().fileExists("/dev/null"));
   }
@@ -172,6 +181,13 @@ TEST_P(ServerInstanceImplTest, BootstrapNodeWithOptionsOverride) {
   EXPECT_EQ(VersionInfo::version(), server_->localInfo().node().build_version());
 }
 
+// Regression test for segfault when server initialization fails prior to
+// ClusterManager initialization.
+TEST_P(ServerInstanceImplTest, BootstrapClusterManagerInitializationFail) {
+  EXPECT_THROW_WITH_MESSAGE(initialize("test/server/cluster_dupe_bootstrap.yaml"), EnvoyException,
+                            "cluster manager: duplicate cluster 'service_google'");
+}
+
 // Negative test for protoc-gen-validate constraints.
 TEST_P(ServerInstanceImplTest, ValidateFail) {
   options_.service_cluster_name_ = "some_cluster_name";
@@ -224,7 +240,8 @@ TEST_P(ServerInstanceImplTest, NoOptionsPassed) {
       server_.reset(new InstanceImpl(
           options_,
           Network::Address::InstanceConstSharedPtr(new Network::Address::Ipv4Instance("127.0.0.1")),
-          hooks_, restart_, stats_store_, fakelock_, component_factory_, thread_local_)),
+          hooks_, restart_, stats_store_, fakelock_, component_factory_,
+          std::make_unique<NiceMock<Runtime::MockRandomGenerator>>(), thread_local_)),
       EnvoyException, "unable to read file: ")
 }
 } // namespace Server

@@ -63,9 +63,9 @@ MainCommonBase::MainCommonBase(OptionsImpl& options) : options_(options) {
     Logger::Registry::initialize(options_.logLevel(), options_.logFormat(), log_lock);
 
     stats_store_.reset(new Stats::ThreadLocalStoreImpl(restarter_->statsAllocator()));
-    server_.reset(new Server::InstanceImpl(options_, local_address, default_test_hooks_,
-                                           *restarter_, *stats_store_, access_log_lock,
-                                           component_factory_, *tls_));
+    server_.reset(new Server::InstanceImpl(
+        options_, local_address, default_test_hooks_, *restarter_, *stats_store_, access_log_lock,
+        component_factory_, std::make_unique<Runtime::RandomGeneratorImpl>(), *tls_));
     break;
   }
   case Server::Mode::Validate:
@@ -93,7 +93,7 @@ bool MainCommonBase::run() {
   NOT_REACHED;
 }
 
-MainCommon::MainCommon(int argc, char** argv)
+MainCommon::MainCommon(int argc, const char* const* argv)
     : options_(argc, argv, &MainCommon::hotRestartVersion, spdlog::level::info), base_(options_) {}
 
 std::string MainCommon::hotRestartVersion(uint64_t max_num_stats, uint64_t max_stat_name_len,

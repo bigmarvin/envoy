@@ -4,7 +4,6 @@
 
 #include "envoy/server/filter_config.h"
 
-#include "common/config/well_known_names.h"
 #include "common/protobuf/protobuf.h"
 
 namespace Envoy {
@@ -20,16 +19,16 @@ namespace Common {
  */
 class EmptyHttpFilterConfig : public Server::Configuration::NamedHttpFilterConfigFactory {
 public:
-  virtual Server::Configuration::HttpFilterFactoryCb
-  createFilter(const std::string& stat_prefix, Server::Configuration::FactoryContext& context) PURE;
+  virtual Http::FilterFactoryCb createFilter(const std::string& stat_prefix,
+                                             Server::Configuration::FactoryContext& context) PURE;
 
-  Server::Configuration::HttpFilterFactoryCb
+  Http::FilterFactoryCb
   createFilterFactory(const Json::Object&, const std::string& stat_prefix,
                       Server::Configuration::FactoryContext& context) override {
     return createFilter(stat_prefix, context);
   }
 
-  Server::Configuration::HttpFilterFactoryCb
+  Http::FilterFactoryCb
   createFilterFactoryFromProto(const Protobuf::Message&, const std::string& stat_prefix,
                                Server::Configuration::FactoryContext& context) override {
     return createFilter(stat_prefix, context);
@@ -38,6 +37,14 @@ public:
   ProtobufTypes::MessagePtr createEmptyConfigProto() override {
     return ProtobufTypes::MessagePtr{new Envoy::ProtobufWkt::Empty()};
   }
+
+  std::string name() override { return name_; }
+
+protected:
+  EmptyHttpFilterConfig(const std::string& name) : name_(name) {}
+
+private:
+  const std::string name_;
 };
 
 } // namespace Common

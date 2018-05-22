@@ -4,7 +4,10 @@
 
 #include "common/buffer/buffer_impl.h"
 #include "common/common/empty_string.h"
+#include "common/config/metadata.h"
+#include "common/config/well_known_names.h"
 #include "common/network/utility.h"
+#include "common/router/config_impl.h"
 #include "common/router/router.h"
 #include "common/tracing/http_tracer_impl.h"
 #include "common/upstream/upstream_impl.h"
@@ -102,6 +105,72 @@ public:
                  cm_.conn_pool_.host_->stats_store_.counter("rq_error").value(), error);
     }
     return AssertionSuccess();
+  }
+
+  void verifyMetadataMatchCriteriaFromRequest(bool route_entry_has_match) {
+    ProtobufWkt::Struct request_struct, route_struct;
+    ProtobufWkt::Value val;
+
+    // Populate metadata like RequestInfo.setDynamicMetadata() would.
+    auto& fields_map = *request_struct.mutable_fields();
+    val.set_string_value("v3.1");
+    fields_map["version"] = val;
+    val.set_string_value("devel");
+    fields_map["stage"] = val;
+    (*callbacks_.request_info_.metadata_
+          .mutable_filter_metadata())[Envoy::Config::MetadataFilters::get().ENVOY_LB] =
+        request_struct;
+
+    // Populate route entry's metadata which will be overridden.
+    val.set_string_value("v3.0");
+    fields_map = *request_struct.mutable_fields();
+    fields_map["version"] = val;
+    MetadataMatchCriteriaImpl route_entry_matches(route_struct);
+
+    if (route_entry_has_match) {
+      ON_CALL(callbacks_.route_->route_entry_, metadataMatchCriteria())
+          .WillByDefault(Return(&route_entry_matches));
+    } else {
+      ON_CALL(callbacks_.route_->route_entry_, metadataMatchCriteria())
+          .WillByDefault(Return(nullptr));
+    }
+
+    EXPECT_CALL(cm_, httpConnPoolForCluster(_, _, _, _))
+        .WillOnce(
+            Invoke([&](const std::string&, Upstream::ResourcePriority, Http::Protocol,
+                       Upstream::LoadBalancerContext* context) -> Http::ConnectionPool::Instance* {
+              auto match = context->metadataMatchCriteria()->metadataMatchCriteria();
+              EXPECT_EQ(match.size(), 2);
+              auto it = match.begin();
+
+              // Note: metadataMatchCriteria() keeps its entries sorted, so the order for checks
+              // below matters.
+
+              // `stage` was only set by the request, not by the route entry.
+              EXPECT_EQ((*it)->name(), "stage");
+              EXPECT_EQ((*it)->value().value().string_value(), "devel");
+              it++;
+
+              // `version` should be what came from the request, overriding the route entry.
+              EXPECT_EQ((*it)->name(), "version");
+              EXPECT_EQ((*it)->value().value().string_value(), "v3.1");
+
+              // When metadataMatchCriteria() is computed from dynamic metadata, the result should
+              // be cached.
+              EXPECT_EQ(context->metadataMatchCriteria(), context->metadataMatchCriteria());
+
+              return &cm_.conn_pool_;
+            }));
+    EXPECT_CALL(cm_.conn_pool_, newStream(_, _)).WillOnce(Return(&cancellable_));
+    expectResponseTimerCreate();
+
+    Http::TestHeaderMapImpl headers;
+    HttpTestUtility::addDefaultHeaders(headers);
+    router_.decodeHeaders(headers, true);
+
+    // When the router filter gets reset we should cancel the pool request.
+    EXPECT_CALL(cancellable_, cancel());
+    router_.onDestroy();
   }
 
   std::string upstream_zone_{"to_az"};
@@ -306,6 +375,11 @@ TEST_F(RouterTest, HashPolicyNoHash) {
   EXPECT_TRUE(verifyHostUpstreamStats(0, 0));
 }
 
+TEST_F(RouterTest, HashKeyNoHashPolicy) {
+  ON_CALL(callbacks_.route_->route_entry_, hashPolicy()).WillByDefault(Return(nullptr));
+  EXPECT_FALSE(router_.computeHashKey().has_value());
+}
+
 TEST_F(RouterTest, AddCookie) {
   ON_CALL(callbacks_.route_->route_entry_, hashPolicy())
       .WillByDefault(Return(&callbacks_.route_->route_entry_.hash_policy_));
@@ -458,9 +532,9 @@ TEST_F(RouterTest, AddMultipleCookies) {
   router_.onDestroy();
 }
 
-TEST_F(RouterTest, MetadataMatchCriteria) {
-  MockMetadataMatchCriteria matches;
+TEST_F(RouterTest, MetadataNoOp) { EXPECT_EQ(nullptr, router_.metadataMatchCriteria()); }
 
+TEST_F(RouterTest, MetadataMatchCriteria) {
   ON_CALL(callbacks_.route_->route_entry_, metadataMatchCriteria())
       .WillByDefault(Return(&callbacks_.route_->route_entry_.metadata_matches_criteria_));
   EXPECT_CALL(cm_, httpConnPoolForCluster(_, _, _, _))
@@ -481,6 +555,14 @@ TEST_F(RouterTest, MetadataMatchCriteria) {
   // When the router filter gets reset we should cancel the pool request.
   EXPECT_CALL(cancellable_, cancel());
   router_.onDestroy();
+}
+
+TEST_F(RouterTest, MetadataMatchCriteriaFromRequest) {
+  verifyMetadataMatchCriteriaFromRequest(true);
+}
+
+TEST_F(RouterTest, MetadataMatchCriteriaFromRequestNoRouteEntryMatch) {
+  verifyMetadataMatchCriteriaFromRequest(false);
 }
 
 TEST_F(RouterTest, NoMetadataMatchCriteria) {
@@ -1117,6 +1199,40 @@ TEST_F(RouterTest, RetryUpstreamPerTryTimeout) {
   EXPECT_CALL(cm_.conn_pool_.host_->outlier_detector_, putHttpResponseCode(200));
   response_decoder->decodeHeaders(std::move(response_headers), true);
   EXPECT_TRUE(verifyHostUpstreamStats(1, 1));
+}
+
+TEST_F(RouterTest, DontResetStartedResponseOnUpstreamPerTryTimeout) {
+  NiceMock<Http::MockStreamEncoder> encoder1;
+  Http::StreamDecoder* response_decoder = nullptr;
+  EXPECT_CALL(cm_.conn_pool_, newStream(_, _))
+      .WillOnce(Invoke([&](Http::StreamDecoder& decoder, Http::ConnectionPool::Callbacks& callbacks)
+                           -> Http::ConnectionPool::Cancellable* {
+        response_decoder = &decoder;
+        callbacks.onPoolReady(encoder1, cm_.conn_pool_.host_);
+        return nullptr;
+      }));
+  expectResponseTimerCreate();
+  expectPerTryTimerCreate();
+
+  Http::TestHeaderMapImpl headers{{"x-envoy-internal", "true"},
+                                  {"x-envoy-upstream-rq-per-try-timeout-ms", "5"}};
+  HttpTestUtility::addDefaultHeaders(headers);
+  router_.decodeHeaders(headers, true);
+
+  // Since the response is already started we don't retry.
+  EXPECT_CALL(*router_.retry_state_, shouldRetry(_, _, _)).WillOnce(Return(RetryStatus::No));
+  EXPECT_CALL(callbacks_, encodeHeaders_(_, false));
+  Http::HeaderMapPtr response_headers(new Http::TestHeaderMapImpl{{":status", "200"}});
+  Buffer::OwnedImpl body("test body");
+  EXPECT_CALL(cm_.conn_pool_.host_->outlier_detector_, putHttpResponseCode(200));
+  response_decoder->decodeHeaders(std::move(response_headers), false);
+  per_try_timeout_->callback_();
+  EXPECT_CALL(callbacks_, encodeData(_, true));
+  response_decoder->decodeData(body, true);
+  EXPECT_TRUE(verifyHostUpstreamStats(1, 0));
+  EXPECT_EQ(0U, cm_.thread_local_cluster_.cluster_.info_->stats_store_
+                    .counter("upstream_rq_per_try_timeout")
+                    .value());
 }
 
 TEST_F(RouterTest, RetryUpstreamResetResponseStarted) {

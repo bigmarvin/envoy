@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	_ "github.com/envoyproxy/data-plane-api/api/ads"
-	_ "github.com/envoyproxy/data-plane-api/api/auth"
 	_ "github.com/envoyproxy/data-plane-api/api/bootstrap"
 	_ "github.com/envoyproxy/data-plane-api/api/cds"
 	_ "github.com/envoyproxy/data-plane-api/api/cert"
@@ -14,6 +13,9 @@ import (
 	_ "github.com/envoyproxy/data-plane-api/api/rds"
 	_ "github.com/envoyproxy/data-plane-api/api/rls"
 	_ "github.com/envoyproxy/data-plane-api/api/sds"
+	_ "github.com/envoyproxy/data-plane-api/api/als"
+	_ "github.com/envoyproxy/data-plane-api/api/metrics_service"
+	_ "github.com/envoyproxy/data-plane-api/api/trace_service"
 )
 
 func TestNoop(t *testing.T) {

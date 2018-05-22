@@ -21,6 +21,8 @@
 #include "common/common/fmt.h"
 #include "common/common/thread.h"
 
+#include "absl/strings/match.h"
+
 namespace Envoy {
 namespace Filesystem {
 
@@ -59,6 +61,36 @@ std::string fileReadToEnd(const std::string& path) {
   file_string << file.rdbuf();
 
   return file_string.str();
+}
+
+std::string canonicalPath(const std::string& path) {
+  // TODO(htuch): When we are using C++17, switch to std::filesystem::canonical.
+  char* resolved_path = ::realpath(path.c_str(), nullptr);
+  if (resolved_path == nullptr) {
+    throw EnvoyException(fmt::format("Unable to determine canonical path for {}", path));
+  }
+  std::string resolved_path_string{resolved_path};
+  free(resolved_path);
+  return resolved_path_string;
+}
+
+bool illegalPath(const std::string& path) {
+  try {
+    const std::string canonical_path = canonicalPath(path);
+    // Platform specific path sanity; we provide a convenience to avoid Envoy
+    // instances poking in bad places. We may have to consider conditioning on
+    // platform in the future, growing these or relaxing some constraints (e.g.
+    // there are valid reasons to go via /proc for file paths).
+    // TODO(htuch): Optimize this as a hash lookup if we grow any further.
+    if (absl::StartsWith(canonical_path, "/dev") || absl::StartsWith(canonical_path, "/sys") ||
+        absl::StartsWith(canonical_path, "/proc")) {
+      return true;
+    }
+    return false;
+  } catch (const EnvoyException& ex) {
+    ENVOY_LOG_MISC(debug, "Unable to determine canonical path for {}: {}", path, ex.what());
+    return true;
+  }
 }
 
 FileImpl::FileImpl(const std::string& path, Event::Dispatcher& dispatcher,
@@ -136,7 +168,7 @@ void FileImpl::doWrite(Buffer::Instance& buffer) {
 void FileImpl::flushThreadFunc() {
 
   while (true) {
-    std::unique_lock<std::mutex> flush_lock;
+    std::unique_lock<Thread::BasicLockable> flush_lock;
 
     {
       std::unique_lock<std::mutex> write_lock(write_lock_);
@@ -151,7 +183,7 @@ void FileImpl::flushThreadFunc() {
         return;
       }
 
-      flush_lock = std::unique_lock<std::mutex>(flush_lock_);
+      flush_lock = std::unique_lock<Thread::BasicLockable>(flush_lock_);
       ASSERT(flush_buffer_.length() > 0);
       about_to_write_buffer_.move(flush_buffer_);
       ASSERT(flush_buffer_.length() == 0);
@@ -175,7 +207,7 @@ void FileImpl::flushThreadFunc() {
 }
 
 void FileImpl::flush() {
-  std::unique_lock<std::mutex> flush_buffer_lock;
+  std::unique_lock<Thread::BasicLockable> flush_buffer_lock;
 
   {
     std::lock_guard<std::mutex> write_lock(write_lock_);
@@ -185,7 +217,7 @@ void FileImpl::flush() {
     // flush_buffer_ to about_to_write_buffer_, has unlocked write_lock_,
     // but has not yet completed doWrite(). This would allow flush() to
     // return before the pending data has actually been written to disk.
-    flush_buffer_lock = std::unique_lock<std::mutex>(flush_lock_);
+    flush_buffer_lock = std::unique_lock<Thread::BasicLockable>(flush_lock_);
 
     if (flush_buffer_.length() == 0) {
       return;
